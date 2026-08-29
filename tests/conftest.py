@@ -17,9 +17,17 @@ import tempfile
 _TMP = tempfile.mkdtemp(prefix="doorbird-tests-")
 
 os.environ["DATA_DIR"] = _TMP
-os.environ.setdefault("ADMIN_USERNAME", "admin")
-os.environ.setdefault("ADMIN_PASSWORD", "test")
-os.environ.setdefault("SECRET_KEY", "test-secret")
+
+# Assigned, not `setdefault`, for the same reason as DATA_DIR: the suite must
+# not inherit whatever credentials happen to be in the environment. CI sets
+# ADMIN_PASSWORD for the app, and with `setdefault` the app took that value
+# while the test client kept signing in with "test" -- so every authenticated
+# page quietly rendered the login screen instead, and 23 tests failed on the
+# symptom rather than the cause.
+os.environ["ADMIN_USERNAME"] = "admin"
+os.environ["ADMIN_PASSWORD"] = "test"
+os.environ.pop("ADMIN_PASSWORD_HASH", None)
+os.environ["SECRET_KEY"] = "test-secret"
 
 if "FERNET_KEY" not in os.environ:
     from cryptography.fernet import Fernet

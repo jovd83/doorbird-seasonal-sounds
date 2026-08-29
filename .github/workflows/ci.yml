@@ -16,12 +16,11 @@ concurrency:
 
 env:
   PYTHONUNBUFFERED: "1"
-  # The app reads these at import time. Values are throwaway; conftest.py
-  # redirects DATA_DIR to a temp directory before anything is imported.
-  ADMIN_USERNAME: admin
-  ADMIN_PASSWORD: ci-test-password
-  SECRET_KEY: ci-secret-key-not-used-anywhere-real
   TZ: Europe/Brussels
+  # Deliberately no ADMIN_* or SECRET_KEY here. tests/conftest.py assigns its
+  # own before the app is imported, and setting them at the job level meant the
+  # app used CI's password while the test client signed in with conftest's --
+  # every authenticated page rendered the login screen instead.
 
 jobs:
   lint:
