@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — Unreleased
+
+### Added
+
+### Changed
+
+### Fixed
+
+### Removed
+
 ## [0.1.0] — 2026-08-29
 
 First tagged release. The app had been running for months before this point;
@@ -87,4 +97,5 @@ that preceded it.
 - Dropped the unused `passlib[bcrypt]` dependency, which could not drive
   bcrypt 5.x in any case.
 
+[0.2.0]: https://github.com/jovd83/doorbird-seasonal-sounds/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/jovd83/doorbird-seasonal-sounds/releases/tag/v0.1.0
