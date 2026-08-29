@@ -1,0 +1,29 @@
+# Keep the image to the application and its dependencies.
+.git
+.github
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+*.egg-info
+build
+dist
+
+# Secrets and local data must never end up in a layer.
+.env
+*.env
+!.env.example
+data/
+
+# Not part of the running app.
+tests/
+tools/
+discovery/
+docs/
+home_assistant/
+deploy/
+Technical_Reviews/
+*.md
+!README.md

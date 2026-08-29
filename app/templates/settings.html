@@ -1,0 +1,359 @@
+{% extends "base.html" %}
+{% set active_nav = "settings" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+
+<div class="topbar">
+  <div>
+    <h1>Settings</h1>
+    <p class="sub">
+      Runtime settings. Deployment defaults live in <code>.env</code> — anything here
+      can be changed without restarting the container.
+    </p>
+  </div>
+</div>
+
+<div class="stack">
+
+{% if not ring_chime_enabled %}
+  <div class="note note--alert">
+    {{ icon("alert", 16) }}
+    <div class="note-body">
+      <strong>Ring-chime mode is switched off</strong> in <code>.env</code>
+      (<code>RING_CHIME_ENABLED=0</code>). Nothing below takes effect until you turn it
+      back on and restart the container.
+    </div>
+  </div>
+{% endif %}
+
+<div class="row">
+  <div class="col-2">
+    <div class="stack">
+
+      <section class="card">
+        <div class="card-head">
+          <span class="card-title">{{ icon("bell", 16) }}When no schedule is active</span>
+        </div>
+        <div class="card-body">
+          <form method="post" action="/settings/play-default">
+            {{ csrf_input(request) }}
+            <label class="switch">
+              <input type="checkbox" id="play_default" name="play_default" value="true"
+                     {% if play_default_when_idle %}checked{% endif %}
+                     onchange="this.form.submit()">
+              <span class="track"></span>
+              <span class="switch-label">Play the default MP3 when no schedule is active</span>
+              <span class="state"><span class="on">On</span><span class="off">Off</span></span>
+            </label>
+            <p class="help" style="margin-top:12px">
+              {% if play_default_when_idle %}
+                Every ring plays something: a matching schedule's sound, or the default
+                outside every window.
+              {% else %}
+                Off-season rings produce <strong>no audio from this app</strong> —
+                visitors hear only the door station's own built-in chime. Schedules
+                still play normally while they are active.
+              {% endif %}
+            </p>
+            <noscript>
+              <button class="btn btn--sm btn--primary" style="margin-top:12px" type="submit">Save</button>
+            </noscript>
+          </form>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <span class="card-title">{{ icon("station", 16) }}How a ring reaches this app</span>
+        </div>
+        <div class="card-body">
+          <p class="help">
+            Both options end up in the same place — today's sound plays out of the door
+            station's speaker. They differ only in how this app finds out that somebody
+            pressed the button.
+          </p>
+          <form method="post" action="/settings/trigger-mode" class="stack">
+            {{ csrf_input(request) }}
+            <div>
+              {% for value, label in modes.items() %}
+              <label class="radio-row">
+                <input type="radio" name="mode" id="mode-{{ value }}" value="{{ value }}"
+                       {% if value == current_mode %}checked{% endif %}>
+                <span class="mark"></span>
+                <span class="radio-body">
+                  <span class="radio-title">
+                    {{ label }}
+                    {% if value == current_mode %}
+                      <span class="chip chip--live chip--sm">{{ icon("check") }}In use</span>
+                    {% endif %}
+                  </span>
+                  <span class="radio-desc">
+                    {% if value == "monitor" %}
+                      This app opens <code>GET /bha-api/monitor.cgi?ring=doorbell</code> and
+                      holds it open. <strong>Nothing is configured on the DoorBird</strong>,
+                      so it cannot disturb an existing integration. Needs a permanent LAN
+                      connection to each device.
+                    {% elif value == "webhook" %}
+                      Another system on the LAN calls the URL opposite when the bell rings.
+                      No permanent connection needed, and it survives this app restarting.
+                      <strong>The DoorBird's own configuration stays untouched.</strong>
+                    {% else %}
+                      Run both. Whichever notices first wins; the shared debounce stops the
+                      sound playing twice.
+                    {% endif %}
+                  </span>
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+            <div class="inline">
+              <span class="push"></span>
+              <button class="btn btn--primary" type="submit">Save trigger</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <span class="card-title">{{ icon("ext", 16) }}Triggering from another system</span>
+        </div>
+        <div class="card-body">
+          <p class="help">
+            Whatever already knows a ring happened — a home-automation controller, an
+            existing doorbell integration, a script — just has to issue one plain
+            <code>GET</code> to that device's URL. No body, no headers, no authentication
+            beyond the token already in the URL.
+          </p>
+          <div class="code-block">curl "{{ (webhook_urls[0][1] if webhook_urls else webhook_base ~ '/ring/&lt;token&gt;?device=&lt;id&gt;') }}"</div>
+          <p class="help">
+            A <code>200</code> with <code>{"ok": true}</code> means the ring was accepted;
+            the reply comes back immediately and the audio plays after it, so the caller is
+            never left waiting for the clip. A duplicate arriving inside the debounce window
+            answers <code>{"ok": false}</code>, which is normal and not an error.
+            Press the bell (or run the <code>curl</code>) and watch the
+            <a href="/audit">Audit</a> page for a <code>chime</code> entry.
+          </p>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="stack">
+
+      {#
+        Appearance sits at the top of the right column: it is the one setting
+        here that changes nothing about how the doorbell behaves, so it stays
+        out of the way of the ones that do.
+      #}
+      <section class="card">
+        <div class="card-head">
+          <span class="card-title">
+            {{ icon("moon", 16) if current_theme == "dark" else icon("sun", 16) }}Appearance
+          </span>
+        </div>
+        <div class="card-body">
+          <form method="post" action="/settings/theme" id="theme-form">
+            {{ csrf_input(request) }}
+            {# The checkbox drives the switch; the hidden field carries the value
+               the route reads, because an unchecked box submits nothing at all. #}
+            <input type="hidden" name="theme" id="theme-value"
+                   value="{{ 'dark' if current_theme == 'dark' else 'light' }}">
+            <label class="switch">
+              <input type="checkbox" id="theme-switch"
+                     {% if current_theme == "dark" %}checked{% endif %}>
+              <span class="track"></span>
+              <span class="switch-label">Dark mode</span>
+              <span class="state"><span class="on">Dark</span><span class="off">Light</span></span>
+            </label>
+          </form>
+          {# Without scripting the switch cannot submit itself, so offer the two
+             states as plain buttons. Separate forms: a second `theme` field in
+             the form above would arrive alongside the hidden one. #}
+          <noscript>
+            <div class="inline" style="margin-top:12px">
+              <form class="inline-form" method="post" action="/settings/theme">
+                {{ csrf_input(request) }}
+                <input type="hidden" name="theme" value="dark">
+                <button class="btn btn--sm" type="submit">{{ icon("moon", 14) }}Dark</button>
+              </form>
+              <form class="inline-form" method="post" action="/settings/theme">
+                {{ csrf_input(request) }}
+                <input type="hidden" name="theme" value="light">
+                <button class="btn btn--sm" type="submit">{{ icon("sun", 14) }}Light</button>
+              </form>
+            </div>
+          </noscript>
+          <p class="help">
+            Stored per install rather than per browser, so the hallway tablet and your
+            phone agree. The interface is designed dark-first; light mode keeps the same
+            contrast floor.
+          </p>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <span class="card-title">{{ icon("key", 16) }}Webhook URL</span>
+          {% if current_mode == "monitor" %}
+            <span class="chip chip--sm">{{ icon("minus") }}Not in use</span>
+          {% endif %}
+        </div>
+        <div class="card-body">
+          {% if webhook_urls %}
+            <p class="help">
+              Configure this URL on the DoorBird as an HTTP(S) call for the
+              <em>doorbell</em> event. The token is the only credential, since a caller
+              cannot log in — it never leaves your LAN. Rotating it invalidates every URL
+              below.
+            </p>
+            <div>
+              {% for name, url in webhook_urls %}
+              <div class="kv" style="flex-direction:column;align-items:stretch;gap:6px">
+                <span class="inline-tight">{{ icon("station", 13) }}<strong style="color:var(--text)">{{ name }}</strong></span>
+                <span class="code-line"><span>{{ url }}</span></span>
+              </div>
+              {% endfor %}
+            </div>
+
+            {% if base_unreachable %}
+            <div class="note note--alert">
+              {{ icon("alert", 16) }}
+              <div class="note-body">
+                <strong>These URLs will not work from another machine.</strong>
+                <code>{{ webhook_base }}</code> resolves only on this host{% if not base_configured %}
+                (it is what your browser used, not something this app can detect reliably
+                from inside a container){% endif %}. Set the real address below.
+              </div>
+            </div>
+            {% elif not base_configured %}
+            <div class="note note--warn">
+              {{ icon("alert", 16) }}
+              <div class="note-body">
+                Guessed from your browser's address. If this app runs in a container, the
+                port it listens on internally is usually <em>not</em> the port callers use
+                — pin the address below so these URLs stay correct.
+              </div>
+            </div>
+            {% endif %}
+          {% else %}
+            <p class="help">Add a device first and the URLs will appear here.</p>
+          {% endif %}
+        </div>
+        <div class="card-foot card-foot--stack">
+          <form method="post" action="/settings/base-url" class="stack-sm">
+            {{ csrf_input(request) }}
+            <div class="field">
+              <label for="base_url">Address other systems use to reach this app</label>
+              <input type="text" id="base_url" name="base_url"
+                     value="{{ webhook_base if base_configured else '' }}"
+                     placeholder="http://192.168.1.50:8088">
+            </div>
+            <p class="help">
+              Use the host's LAN address and the <strong>published</strong> port — in Docker
+              that is the left-hand side of the <code>ports:</code> mapping (this image
+              listens on 8080 inside the container). Behind a reverse proxy, use the
+              proxy's address. Leave blank to guess from your browser.
+            </p>
+            <div class="inline">
+              <button class="btn btn--sm btn--primary" type="submit">Save address</button>
+              <span class="push"></span>
+            </div>
+          </form>
+          <form class="inline-form" method="post" action="/settings/rotate-token"
+                onsubmit="return confirm('Rotate the token? Every caller will need its URL updated.');">
+            {{ csrf_input(request) }}
+            <button class="btn btn--sm btn--danger" type="submit">
+              {{ icon("refresh", 14) }}Rotate token
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <section class="card is-alert">
+        <div class="card-head">
+          <span class="card-title">{{ icon("alert", 16) }}Do not register this URL on the DoorBird itself</span>
+        </div>
+        <div class="card-body">
+          <p style="font-size:12.5px;line-height:1.6;color:var(--text2)">
+            The LAN API allows <strong style="color:var(--text)">only one HTTP entry per
+            event slot</strong>, and this DoorBird's doorbell slot is already taken by
+            another system. Adding this app's URL there would
+            <strong style="color:var(--alert)">replace it and break that integration</strong>.
+            Treat that slot as off limits — stay on
+            <em style="font-style:normal;color:var(--text)">Listen for ring events</em>,
+            or have the system that already receives the ring call this app.
+          </p>
+          <form method="post" action="/settings/forward-url" class="stack-sm">
+            {{ csrf_input(request) }}
+            <div class="field">
+              <label for="forward_url">Optional: also relay each ring to another URL</label>
+              <input type="text" id="forward_url" name="forward_url" value="{{ forward_url }}"
+                     placeholder="http://another-system.lan/some/ring/endpoint">
+            </div>
+            <div class="inline">
+              <button class="btn btn--sm" type="submit">Save forward URL</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <span class="card-title">{{ icon("wave", 16) }}Current ring listeners</span>
+          <span class="card-count">{{ ring_status | length }} running</span>
+        </div>
+        <div class="card-body is-flush">
+          <div class="list">
+            {% for w in ring_status %}
+            <div class="list-row {{ '' if w.connected else ('is-warn' if w.alive else 'is-alert') }}">
+              <div class="list-main">
+                <span class="list-title" style="font-size:13px">{{ w.device }}</span>
+              </div>
+              <div class="list-side">
+                {% if w.connected %}
+                  <span class="chip chip--live chip--sm"><span class="dot"></span>Listening</span>
+                {% elif w.alive %}
+                  <span class="chip chip--warn chip--sm">{{ icon("refresh") }}Reconnecting</span>
+                {% else %}
+                  <span class="chip chip--alert chip--sm">{{ icon("alert") }}Stopped</span>
+                {% endif %}
+              </div>
+            </div>
+            {% else %}
+            <p class="list-empty">
+              No monitor.cgi listeners running{% if current_mode == "webhook" %} — expected,
+              this install uses the webhook{% endif %}.
+            </p>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Flip the attribute before posting so the page is already the right colour
+  // when the redirect lands — otherwise the old theme flashes for a beat.
+  (function () {
+    var box = document.getElementById("theme-switch");
+    var value = document.getElementById("theme-value");
+    var form = document.getElementById("theme-form");
+    if (!box || !value || !form) return;
+    box.addEventListener("change", function () {
+      var next = box.checked ? "dark" : "light";
+      document.documentElement.dataset.theme = next;
+      value.value = next;
+      form.submit();
+    });
+  })();
+</script>
+{% endblock %}

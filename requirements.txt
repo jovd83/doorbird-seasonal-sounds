@@ -1,0 +1,51 @@
+# Pinned runtime dependencies — the image installs from this, not from the
+# `>=` ranges in pyproject.toml, so two builds a month apart are the same
+# image. pyproject.toml stays the source of truth for *which* packages are
+# direct dependencies; this file records the exact versions last verified.
+#
+# Regenerate after changing pyproject.toml:
+#   pip install -e "." && pip freeze > requirements.txt
+# then re-add these comments and drop the project itself from the list.
+#
+# Direct dependencies
+alembic==1.19.1
+apscheduler==3.11.3
+cryptography==50.0.0
+fastapi==0.141.1
+httpx==0.28.1
+jinja2==3.1.6
+itsdangerous==2.2.0
+mutagen==1.48.1
+pydantic==2.13.4
+pydantic-settings==2.15.0
+python-multipart==0.0.32
+sqlalchemy==2.0.52
+uvicorn[standard]==0.52.4
+
+# Transitive — pinned so a rebuild cannot silently pick up a new minor.
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.14.2
+certifi==2026.7.22
+cffi==2.1.1
+click==8.4.2
+colorama==0.4.6
+greenlet==3.5.5
+h11==0.16.0
+httpcore==1.0.9
+httptools==0.8.0
+idna==3.19
+mako==1.4.1
+markupsafe==3.0.3
+packaging==26.3
+pycparser==3.0
+pydantic-core==2.46.4
+python-dotenv==1.2.3
+pyyaml==6.0.3
+starlette==1.6.0
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+tzdata==2026.3
+tzlocal==5.4.4
+watchfiles==1.2.0
+websockets==17.0.1

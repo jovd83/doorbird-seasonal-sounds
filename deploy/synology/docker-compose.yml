@@ -1,0 +1,38 @@
+# Container Manager → Project → Create → point at this folder.
+#
+# Differences from the repo-root compose file:
+#   * no `container_name`, so Container Manager owns the naming
+#   * an explicit build context, because the image is built on the NAS
+#     rather than pulled from a registry
+#   * host port taken from HOST_PORT so it can be changed without editing
+#     this file (DSM itself uses 5000/5001; 8088 is usually free)
+services:
+  doorbird-seasonal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: doorbird-seasonal:latest
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8088}:8080"
+    environment:
+      TZ: "${TZ:-Europe/Brussels}"
+      ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}"
+      SECRET_KEY: "${SECRET_KEY:?set SECRET_KEY in .env}"
+      FERNET_KEY: "${FERNET_KEY:?set FERNET_KEY in .env}"
+      DATA_DIR: "/data"
+      DAILY_RUN_HOUR: "${DAILY_RUN_HOUR:-3}"
+      DAILY_RUN_MINUTE: "${DAILY_RUN_MINUTE:-15}"
+      RING_CHIME_ENABLED: "${RING_CHIME_ENABLED:-1}"
+      RING_DEBOUNCE_SECONDS: "${RING_DEBOUNCE_SECONDS:-8}"
+      CHIME_MAX_SECONDS: "${CHIME_MAX_SECONDS:-15}"
+      CHIME_GAIN_DB: "${CHIME_GAIN_DB:-0}"
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

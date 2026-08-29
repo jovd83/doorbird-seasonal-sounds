@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% set active_nav = "devices" %}
+{% set wide_page = true %}
+{% block title %}Probe {{ device.name }}{% endblock %}
+{% block content %}
+
+<div class="topbar">
+  <div>
+    <h1>Endpoint probe — {{ device.name }}</h1>
+    <p class="sub">
+      Each row is one candidate URL on this DoorBird. The status code tells you what's
+      there: <strong>200/401</strong> = the path exists; <strong>404</strong> = doesn't
+      exist; <strong>405</strong> = exists but rejects this HTTP method (often means it
+      expects POST). The first row is <code>info.cgi</code> as a sanity check — it should
+      be 200 if your credentials work.
+    </p>
+  </div>
+  <div class="topbar-actions">
+    <span class="chip">{{ icon("station") }}<code>{{ device.host }}</code></span>
+    <a class="btn" href="/devices">{{ icon("chev-r", 16) }}Back to devices</a>
+  </div>
+</div>
+
+<div class="stack">
+
+  <section class="card">
+    <div class="card-head">
+      <span class="card-title">{{ icon("search", 16) }}Results</span>
+      <span class="card-count">{{ results | length }} paths probed</span>
+    </div>
+    <div class="card-body is-flush">
+      <div class="tbl-wrap">
+        <table class="tbl tbl--dense">
+          {#
+            Only the columns the probe actually produces. The table used to
+            carry "POST" and "Body excerpt" columns as well, reading r.POST and
+            r.GET_excerpt off a plain dict — keys `probe_endpoints` has never
+            emitted, so both rendered blank on every row for everyone.
+          #}
+          <thead><tr>
+            <th>Path</th><th>Scheme</th><th class="num">GET</th><th>Verdict</th>
+          </tr></thead>
+          <tbody>
+          {% for r in results %}
+            <tr>
+              <td><code>{{ r.path }}</code></td>
+              <td>{{ r.scheme }}</td>
+              <td class="num">
+                {% if r.exists %}
+                  <span class="result-ok">{{ icon("check", 12) }}{{ r.status }}</span>
+                {% else %}
+                  <span class="tnum muted">{{ r.status }}</span>
+                {% endif %}
+              </td>
+              <td class="muted">
+                {% if r.exists %}path exists{% elif r.status == 404 %}not found{% else %}—{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <div class="note note--info">
+    {{ icon("info", 16) }}
+    <div class="note-body">
+      <strong>Reading the results.</strong>
+      If every <code>buttonsound</code>-ish path returned 404, this firmware doesn't
+      expose button-sound configuration on the LAN at all (it's cloud-only on
+      api.doorbird.io, which is captcha-gated).
+      Any path returning <strong>401</strong> exists and needs auth — your auth was sent,
+      so if you see 401 here you would already have failed <code>info.cgi</code>. Worth
+      investigating manually.
+      Anything marked <strong>path exists</strong> is worth investigating by hand —
+      copy it into <code>_BUTTON_SOUND_PATHS</code> in <code>doorbird_client.py</code>
+      and see what it accepts.
+    </div>
+  </div>
+
+</div>
+{% endblock %}

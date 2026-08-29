@@ -1,0 +1,108 @@
+# Copy these snippets into your Home Assistant configuration.
+
+# 1) Store sensitive bits in secrets.yaml
+#
+# /config/secrets.yaml
+# ----------------------------------------------------------
+# doorbird_front:   "your-front-door-admin-password"
+# doorbird_garage:  "your-garage-admin-password"
+
+
+# 2) Main integration block in configuration.yaml
+doorbird_seasonal:
+  mp3_dir: /config/doorbird_seasonal/mp3
+  default_mp3: default.mp3
+  daily_run_time: "03:15"
+
+  devices:
+    - name: Front door
+      host: 192.168.1.50
+      username: ggaaaa0000
+      password: !secret doorbird_front
+    - name: Garage
+      host: 192.168.1.51
+      username: ggaaaa0001
+      password: !secret doorbird_garage
+
+  schedules:
+    - name: Christmas
+      from: "12-20"
+      to:   "01-06"
+      mp3:  christmas.mp3
+      priority: 200
+
+    - name: New Year
+      from: "12-31"
+      to:   "01-01"
+      mp3:  newyear.mp3
+      priority: 300                  # beats Christmas during the overlap
+
+    # A time-of-day window. Give both start_time and end_time, or neither
+    # (neither = all day). A start later than the end wraps past midnight, so
+    # this one covers late evening only.
+    - name: Quiet evenings
+      from: "01-01"
+      to:   "12-31"
+      start_time: "22:00"
+      end_time:   "06:00"
+      mp3:  soft-chime.mp3
+      priority: 250                  # narrower window wins ties at equal priority
+
+    - name: Easter 2026
+      from: "04-03"
+      to:   "04-06"
+      year: 2026                     # shortcut: same as start_year + end_year
+      mp3:  easter.mp3
+      priority: 200
+
+    - name: New-year-2026-fest
+      from: "12-30"                  # multi-year one-off (spans 2026 → 2027)
+      to:   "01-02"
+      start_year: 2026
+      end_year:   2027
+      mp3:  newyear.mp3
+      priority: 250
+
+    - name: Summer
+      from: "06-21"
+      to:   "09-22"
+      mp3:  summer.mp3
+      priority: 50
+
+    - name: Birthday
+      from: "07-14"
+      mp3:  birthday.mp3
+      priority: 300
+
+
+# 3) Optional: automation to force-reapply weekly as a self-heal in case
+#    a DoorBird was unreachable during the daily run.
+automation:
+  - alias: DoorBird seasonal — weekly self-heal
+    trigger:
+      - platform: time
+        at: "04:00:00"
+    condition:
+      - condition: time
+        weekday: [sun]
+    action:
+      - service: doorbird_seasonal.apply_now
+        data:
+          force: true
+
+
+# 4) Optional: heads-up notification on transition days
+#  automation:
+#    - alias: DoorBird sound changing today
+#      trigger:
+#        - platform: time
+#          at: "08:00:00"
+#      condition:
+#        - condition: template
+#          value_template: >-
+#            {{ states('sensor.doorbird_seasonal_next_change').startswith(
+#                 now().date().isoformat()) }}
+#      action:
+#        - service: notify.mobile_app_yourphone
+#          data:
+#            message: "DoorBird swapping today: {{ states('sensor.doorbird_seasonal_next_change') }}"

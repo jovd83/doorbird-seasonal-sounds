@@ -1,0 +1,71 @@
+apply_now:
+  name: Apply seasonal sound now
+  description: >-
+    Resolves today's active sound (per the configured schedules) and pushes it
+    to all enabled DoorBirds. Idempotent — only pushes if the active sound has
+    actually changed since the last apply, unless 'force' is true.
+  fields:
+    force:
+      name: Force re-apply
+      description: Re-upload even if the active sound has not changed.
+      default: false
+      example: false
+      selector:
+        boolean:
+
+set_button_sound:
+  name: Upload + activate a specific MP3
+  description: >-
+    One-off — upload the named MP3 file to the chosen devices and activate it
+    as the custom sound. Bypasses the schedule logic.
+  fields:
+    mp3:
+      name: MP3 filename
+      description: File inside the configured mp3_dir (e.g. "christmas.mp3").
+      required: true
+      example: christmas.mp3
+      selector:
+        text:
+    devices:
+      name: Devices
+      description: Names of devices to push to. Omit for all enabled devices.
+      example: ["Front door", "Garage"]
+      selector:
+        text:
+          multiple: true
+
+activate_builtin:
+  name: Activate a built-in DoorBird sound
+  description: >-
+    Switch to one of DoorBird's stock built-in sounds without uploading anything.
+  fields:
+    sound:
+      name: Sound name
+      description: >-
+        Built-in sound identifier as known to DoorBird (e.g. "Standard",
+        "Bell", "Chime"). Use "custom" to switch to the most recently uploaded
+        custom sound on the device.
+      required: true
+      example: Standard
+      selector:
+        text:
+    devices:
+      name: Devices
+      description: Names of devices to act on. Omit for all enabled devices.
+      example: ["Front door"]
+      selector:
+        text:
+          multiple: true
+
+test_connection:
+  name: Test connection to one or more devices
+  description: >-
+    Issues a harmless GET against the DoorBird cloud API to verify each device
+    credential. Result appears in HA logs and on the device's diagnostic sensor.
+  fields:
+    devices:
+      name: Devices
+      example: ["Front door"]
+      selector:
+        text:
+          multiple: true

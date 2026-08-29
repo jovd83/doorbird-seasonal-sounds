@@ -1,0 +1,447 @@
+{% extends "base.html" %}
+{% set is_auto = (kind == "auto_response") %}
+{% set active_nav = "auto" if is_auto else "chimes" %}
+{% set wide_page = true %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block content %}
+
+{#
+  One template, two pages. They share a layout on purpose but must never be
+  mistaken for one another, so the kind drives the mark, the fallback note and
+  the extra Wait column throughout.
+#}
+{% set kind_icon = "speech" if is_auto else "bell" %}
+
+<div class="topbar">
+  <div>
+    <h1>{{ page_title }}</h1>
+    <p class="sub">{{ intro | safe }}</p>
+  </div>
+  <div class="topbar-actions">
+    <span class="chip">{{ icon(kind_icon) }}{{ "Auto response" if is_auto else "Chime" }}</span>
+    <a class="btn btn--primary" href="#add">{{ icon("plus", 16) }}New {{ noun }}</a>
+  </div>
+</div>
+
+<div class="stack">
+
+  {% if is_auto %}
+    <div class="note note--warn">
+      {{ icon("alert", 16) }}
+      <div class="note-body">
+        <strong>No fallback.</strong> When no auto-response schedule matches, nothing
+        is said — unlike chimes, there is no default spoken message.
+      </div>
+    </div>
+  {% else %}
+    <div class="note note--info">
+      {{ icon("refresh", 16) }}
+      <div class="note-body">
+        <strong>Falls back to the default.</strong> When no chime schedule matches,
+        the MP3 marked default in the <a href="/mp3s">library</a> is what a visitor hears.
+      </div>
+    </div>
+  {% endif %}
+
+  {% if not mp3s and not collections %}
+  <div class="note note--warn">
+    {{ icon("alert", 16) }}
+    <div class="note-body">
+      No {{ "auto-response" if is_auto else "chime" }} MP3s in the
+      <a href="/mp3s">library</a> yet. The MP3 you upload below will be the first one.
+    </div>
+  </div>
+  {% endif %}
+
+  <section class="card">
+    <div class="card-head">
+      <span class="card-title">{{ icon(kind_icon, 16) }}Existing {{ noun }}s</span>
+      <span class="card-actions">
+        <span class="card-count">{{ schedules | length }}</span>
+      </span>
+    </div>
+    <div class="card-body is-flush">
+      <div class="tbl-wrap">
+      {#
+        A <form> is not valid as a child of <tr>, and browsers hoist it out of
+        the table, which quietly breaks the association between the row's
+        inputs and the form. So each row's forms live outside the table and its
+        controls point at them with the HTML5 `form` attribute.
+      #}
+      {% for s in schedules %}
+        <form id="sched-{{ s.id }}" method="post" action="{{ base_url }}/{{ s.id }}/update"
+              autocomplete="off" hidden>
+          {{ csrf_input(request) }}</form>
+        <form id="del-{{ s.id }}" method="post" action="{{ base_url }}/{{ s.id }}/delete"
+              hidden onsubmit="return confirm('Delete {{ s.name }}?');">
+          {{ csrf_input(request) }}</form>
+      {% endfor %}
+      <table class="tbl tbl--form {{ 'has-wait' if is_auto else '' }}">
+        <thead>
+          <tr>
+            <th style="width:13rem">Name</th>
+            <th style="width:11rem">Dates</th>
+            <th style="width:6rem">Every year</th>
+            <th style="width:15rem">Time of day</th>
+            {% if is_auto %}<th style="width:8rem">Wait</th>{% endif %}
+            <th style="width:12rem">Applies to</th>
+            <th style="width:14rem">Sound</th>
+            <th style="width:6rem">Prio</th>
+            <th style="width:7rem">Enabled</th>
+            <th style="width:7rem"></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for s in schedules %}
+          {% set recurring = (s.start_year is none) %}
+          {% set sy = s.start_year if s.start_year else today.year %}
+          {% set start_iso = '%04d-%02d-%02d'|format(sy, s.start_month, s.start_day) %}
+          {% set end_m = s.end_month or s.start_month %}
+          {% set end_d = s.end_day or s.start_day %}
+          {% if recurring %}
+            {% set wraps = ((s.start_month, s.start_day) > (end_m, end_d)) %}
+            {% set ey = (sy + 1) if wraps else sy %}
+          {% else %}
+            {% set ey = s.end_year or s.start_year %}
+          {% endif %}
+          {% set end_iso = '%04d-%02d-%02d'|format(ey, end_m, end_d) %}
+          {% set f = "sched-" ~ s.id %}
+          <tr class="{{ '' if s.enabled else 'is-off' }}">
+            <td>
+              <input class="input-sm" form="{{ f }}" name="name" value="{{ s.name }}" required
+                     aria-label="Name">
+            </td>
+            <td>
+              <div class="stack-sm" style="gap:6px">
+                <input class="input-sm" form="{{ f }}" type="date" name="start"
+                       value="{{ start_iso }}" required aria-label="Start date">
+                <input class="input-sm" form="{{ f }}" type="date" name="end"
+                       value="{{ end_iso }}" aria-label="End date">
+              </div>
+            </td>
+            <td>
+              <label class="check">
+                <input form="{{ f }}" type="checkbox" name="recurring" value="true"
+                       {% if recurring %}checked{% endif %}>
+                <span class="box">{{ icon("check", 13) }}</span>
+                <span class="sr-only">Recurring annually</span>
+              </label>
+            </td>
+            <td>
+              <div class="stack-sm" style="gap:6px">
+                <label class="switch">
+                  <input class="js-allday" form="{{ f }}" type="checkbox" name="all_day" value="true"
+                         id="allday_{{ s.id }}" data-target="times_{{ s.id }}"
+                         {% if s.all_day %}checked{% endif %}>
+                  <span class="track"></span>
+                  <span class="switch-label">All day</span>
+                </label>
+                <div id="times_{{ s.id }}" {% if s.all_day %}hidden{% endif %}>
+                  <div class="input-group input-sm">
+                    <input form="{{ f }}" type="time" name="start_time"
+                           value="{{ s.start_minute | hhmm('08:00') }}" aria-label="Start time">
+                    <span class="input-unit">to</span>
+                    <input form="{{ f }}" type="time" name="end_time"
+                           value="{{ s.end_minute | hhmm('22:00') }}" aria-label="End time">
+                  </div>
+                </div>
+              </div>
+            </td>
+            {% if is_auto %}
+            <td>
+              <div class="input-group input-sm">
+                <input form="{{ f }}" type="number" name="delay_seconds"
+                       value="{{ s.delay_seconds }}" min="0" max="{{ max_delay }}" required
+                       aria-label="Wait interval in seconds">
+                <span class="input-unit">s</span>
+              </div>
+            </td>
+            {% endif %}
+            <td>
+              {% set chosen = s.devices | map(attribute='id') | list %}
+              {# size=1 keeps the multi-select behaviour but renders a single
+                 line, so a long device list does not stretch the table row. #}
+              <select class="input-sm" form="{{ f }}" name="device_ids" multiple
+                      size="1" aria-label="Applies to">
+                {% for d in devices %}
+                  <option value="{{ d.id }}" {% if d.id in chosen %}selected{% endif %}>{{ d.name }}</option>
+                {% endfor %}
+              </select>
+              {% if not s.devices %}
+                <span class="chip chip--sm" style="margin-top:6px">all door stations</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="stack-sm" style="gap:6px">
+                <select class="input-sm js-collection" form="{{ f }}" name="collection_id"
+                        data-target="mp3-{{ s.id }}" aria-label="Collection">
+                  <option value="">— single MP3 —</option>
+                  {% for c in collections %}
+                    <option value="{{ c.id }}" {% if c.id==s.collection_id %}selected{% endif %}>
+                      {{ c.name }} ({{ c.mp3s|length }})
+                    </option>
+                  {% endfor %}
+                </select>
+                <select class="input-sm" form="{{ f }}" name="mp3_id" id="mp3-{{ s.id }}"
+                        aria-label="Single MP3">
+                  {% for m in mp3s %}
+                    <option value="{{ m.id }}" {% if m.id==s.mp3_id %}selected{% endif %}>{{ m.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </td>
+            <td>
+              <input class="input-sm" form="{{ f }}" type="number" name="priority"
+                     value="{{ s.priority }}" min="0" aria-label="Priority">
+            </td>
+            <td>
+              <label class="switch">
+                <input form="{{ f }}" type="checkbox" name="enabled" value="true"
+                       {% if s.enabled %}checked{% endif %}>
+                <span class="track"></span>
+                <span class="state"><span class="on">On</span><span class="off">Off</span></span>
+              </label>
+            </td>
+            <td class="nowrap">
+              <span class="inline-tight">
+                <button class="btn btn--sm btn--primary" form="{{ f }}" type="submit">Save</button>
+                <button class="icon-btn icon-btn--danger" form="del-{{ s.id }}" type="submit"
+                        aria-label="Delete {{ s.name }}">{{ icon("trash", 16) }}</button>
+              </span>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="{{ 10 if is_auto else 9 }}">
+            <span class="muted">No {{ noun }}s yet — add one below.</span>
+          </td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+    <div class="card-foot">
+      {{ icon("info", 14) }}
+      <span>Sorted by priority, then name — the same order the resolver walks.</span>
+    </div>
+  </section>
+
+  {# Collapsed by default: the form is long, and the page is mostly read to
+     check what is scheduled rather than to add something. `<details>` keeps
+     that working with scripting off; the button at the top of the page opens
+     it via the small script at the bottom. #}
+  <details class="card card--collapsible" id="add">
+    <summary class="card-head">
+      <span class="card-title">{{ icon("plus", 16) }}Add {{ "an" if is_auto else "a" }} {{ noun }}</span>
+      <span class="card-count">times in {{ tz_name }}</span>
+      {{ icon("chev-d", 16, "card-chevron") }}
+    </summary>
+    <div class="card-body">
+      {# autocomplete=off stops browsers restoring a stale "All day" state on reload #}
+      <form method="post" action="{{ base_url }}/create" enctype="multipart/form-data"
+            autocomplete="off" class="stack">
+        {{ csrf_input(request) }}
+
+        <fieldset class="panel">
+          <legend>Name and dates</legend>
+          <div class="panel-body">
+            <div class="row" style="gap:12px">
+              <div class="field col">
+                <label for="new_name">Name</label>
+                <input id="new_name" name="name"
+                       placeholder="{{ 'e.g. Parcel message' if is_auto else 'e.g. Christmas' }}" required>
+              </div>
+              <div class="field col">
+                <label for="new_start">Start</label>
+                <input type="date" id="new_start" name="start" required>
+              </div>
+              <div class="field col">
+                <label for="new_end">End <span class="muted">(optional)</span></label>
+                <input type="date" id="new_end" name="end">
+              </div>
+              <div class="field col-sm">
+                <label for="new_prio">Priority</label>
+                <input type="number" id="new_prio" name="priority" value="100" min="0">
+              </div>
+            </div>
+            <div class="inline" style="gap:28px">
+              <label class="switch">
+                <input type="checkbox" name="recurring" value="true" id="recur_new" checked>
+                <span class="track"></span>
+                <span class="switch-label">Recurring annually</span>
+                <span class="state"><span class="on">On</span><span class="off">Off</span></span>
+              </label>
+              <label class="switch">
+                <input type="checkbox" name="enabled" value="true" id="en_new" checked>
+                <span class="track"></span>
+                <span class="switch-label">Enabled</span>
+                <span class="state"><span class="on">On</span><span class="off">Off</span></span>
+              </label>
+            </div>
+            <p class="help">
+              With <strong>Recurring annually</strong> the year is ignored and only the
+              month/day matters. Date ranges may wrap year-end (Dec 20 → Jan 6).
+            </p>
+          </div>
+        </fieldset>
+
+        <div class="row">
+          <fieldset class="panel col">
+            <legend>Time of day</legend>
+            <div class="panel-body">
+              {# The switch sits directly above the fields it controls. #}
+              <label class="switch">
+                <input class="js-allday" type="checkbox" name="all_day" value="true"
+                       id="allday_new" data-target="times_new" checked>
+                <span class="track"></span>
+                <span class="switch-label">All day</span>
+                <span class="state"><span class="on">On</span><span class="off">Off</span></span>
+              </label>
+              <div id="times_new" hidden>
+                <div class="input-group">
+                  <span class="input-unit">from</span>
+                  <input type="time" name="start_time" value="08:00" aria-label="Start time">
+                  <span class="input-unit">to</span>
+                  <input type="time" name="end_time" value="22:00" aria-label="End time">
+                </div>
+                <p class="help" style="margin-top:8px">
+                  24-hour clock. A start later than the end wraps past midnight
+                  (22:00 → 02:00).
+                </p>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="panel col">
+            <legend>Apply to</legend>
+            <div class="panel-body">
+              {% if devices %}
+                <select name="device_ids" multiple size="1" aria-label="Door stations">
+                  {% for d in devices %}
+                    <option value="{{ d.id }}">{{ d.name }} — {{ d.host }}</option>
+                  {% endfor %}
+                </select>
+                <p class="help">
+                  Leave everything unselected to apply to <strong>all door stations</strong>.
+                  Ctrl/&#8984;-click to pick several.
+                </p>
+              {% else %}
+                <p class="help">
+                  No devices yet — this schedule will apply to every door station you add.
+                  <a href="/devices">Add one →</a>
+                </p>
+              {% endif %}
+            </div>
+          </fieldset>
+        </div>
+
+        {% if is_auto %}
+        <fieldset class="panel">
+          <legend>Wait interval</legend>
+          <div class="panel-body">
+            <div class="inline" style="gap:16px">
+              <div class="input-group" style="max-width:180px">
+                <input type="number" name="delay_seconds" id="new_delay" value="5"
+                       min="0" max="{{ max_delay }}" required aria-label="Wait interval in seconds">
+                <span class="input-unit">seconds</span>
+              </div>
+            </div>
+            <p class="help">
+              Counted from the moment the chime has finished playing, not from the
+              button press. <strong>0</strong> speaks the message immediately after
+              the chime. Maximum {{ max_delay }} s.
+            </p>
+          </div>
+        </fieldset>
+        {% endif %}
+
+        <fieldset class="panel">
+          <legend>Sound</legend>
+          <div class="panel-body">
+            <div class="row" style="gap:12px">
+              <div class="field col">
+                <label for="new_collection">Pick a collection</label>
+                <select id="new_collection" name="collection_id">
+                  <option value="">— no collection —</option>
+                  {% for c in collections %}
+                    <option value="{{ c.id }}">{{ c.name }} ({{ c.mp3s|length }} sounds)</option>
+                  {% endfor %}
+                </select>
+                <p class="help">
+                  A collection plays a different member on every ring, never the same
+                  one twice running. <a href="/collections">Manage collections →</a>
+                  Choosing one overrides the single MP3.
+                </p>
+              </div>
+              <div class="field col">
+                <label for="new_mp3">Or pick a single MP3</label>
+                <select id="new_mp3" name="mp3_id">
+                  <option value="">— choose one, or upload on the right —</option>
+                  {% for m in mp3s %}
+                    <option value="{{ m.id }}">{{ m.label }}
+                      ({{ '%.1fs'|format(m.duration_seconds or 0) }})
+                    </option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="field col">
+                <label for="new_mp3_file">Or upload a new MP3</label>
+                <input name="new_mp3_label" placeholder="Label">
+                <input type="file" id="new_mp3_file" name="new_mp3_file" accept="audio/mpeg,.mp3">
+                <p class="help">
+                  Uploaded here, it is filed as {{ "an auto response" if is_auto else "a chime" }}
+                  and used for this schedule straight away.
+                </p>
+              </div>
+            </div>
+          </div>
+        </fieldset>
+
+        <div class="inline">
+          <span class="push"></span>
+          <button class="btn btn--primary" type="submit">{{ icon("plus", 16) }}Add {{ noun }}</button>
+        </div>
+      </form>
+    </div>
+  </details>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // A row picking a collection has no use for its single-MP3 select; the
+  // server ignores it either way, so this is purely to stop it looking live.
+  document.querySelectorAll(".js-collection").forEach(function (sel) {
+    var single = document.getElementById(sel.dataset.target);
+    if (!single) return;
+    var sync = function () { single.disabled = sel.value !== ""; };
+    sel.addEventListener("change", sync);
+    sync();
+  });
+
+  // "All day" hides the time inputs it sits above. Driven from the checkbox
+  // rather than the server-rendered `hidden`, so a browser restoring a stale
+  // checkbox state on reload still shows the matching fields.
+  document.querySelectorAll(".js-allday").forEach(function (box) {
+    var panel = document.getElementById(box.dataset.target);
+    if (!panel) return;
+    var sync = function () { panel.hidden = box.checked; };
+    box.addEventListener("change", sync);
+    sync();
+  });
+
+  // The "New ..." button at the top of the page is a link to #add. Navigating
+  // to a closed <details> only scrolls to it, so open it explicitly. Also
+  // covers a reload landing on #add, and a failed submit sending the user
+  // back to a form that would otherwise be hidden.
+  (function () {
+    var add = document.getElementById("add");
+    if (!add) return;
+    var open = function () {
+      if (window.location.hash === "#add") add.open = true;
+    };
+    window.addEventListener("hashchange", open);
+    open();
+  })();
+</script>
+{% endblock %}

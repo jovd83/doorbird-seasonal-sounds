@@ -1,0 +1,21 @@
+{
+  "title": "DoorBird Seasonal Sounds",
+  "services": {
+    "apply_now": {
+      "name": "Apply seasonal sound now",
+      "description": "Resolve today's active sound from configured schedules and push it to all enabled DoorBirds."
+    },
+    "set_button_sound": {
+      "name": "Upload + activate a specific MP3",
+      "description": "One-off — upload an MP3 to the chosen devices and activate it."
+    },
+    "activate_builtin": {
+      "name": "Activate a built-in DoorBird sound",
+      "description": "Switch to a stock built-in sound without uploading anything."
+    },
+    "test_connection": {
+      "name": "Test connection",
+      "description": "Verify each device credential against the DoorBird cloud API."
+    }
+  }
+}

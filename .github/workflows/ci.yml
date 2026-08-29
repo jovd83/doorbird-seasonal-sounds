@@ -1,0 +1,96 @@
+name: CI
+
+# The gate the project did not have. Everything below was already runnable by
+# hand; nothing ran it, so 128 lint findings accumulated and the test suite
+# depended on somebody remembering.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUNBUFFERED: "1"
+  # The app reads these at import time. Values are throwaway; conftest.py
+  # redirects DATA_DIR to a temp directory before anything is imported.
+  ADMIN_USERNAME: admin
+  ADMIN_PASSWORD: ci-test-password
+  SECRET_KEY: ci-secret-key-not-used-anywhere-real
+  TZ: Europe/Brussels
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install "ruff>=0.7"
+      - name: ruff check
+        run: ruff check --output-format=github .
+      # `ruff format --check` is deliberately NOT run. It would rewrite 52
+      # files, and several of them — the icon table and the NAV list in
+      # templating.py, the aligned constant blocks — are hand-aligned because
+      # they read as tables. Adopting the formatter is a reasonable choice, but
+      # it is a style decision for the project to make in its own commit, not
+      # something to smuggle in behind a lint gate.
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor from pyproject, and the version the image actually ships.
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+      - name: ffmpeg
+        # `app.audio` shells out to it; without it the transcode tests skip
+        # silently rather than failing, which is the wrong signal.
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: pytest
+        run: pytest -q --durations=10
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        # The Dockerfile installs from the pinned lockfile, so a build failure
+        # here means requirements.txt and pyproject.toml have drifted apart.
+        run: docker build -t doorbird-seasonal:ci .
+      - name: The app must start and answer /healthz
+        run: |
+          docker run -d --name db-ci \
+            -e ADMIN_PASSWORD=ci-test-password \
+            -e SECRET_KEY=ci-secret-key \
+            -e FERNET_KEY="$(python -c 'from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())')" \
+            -p 8080:8080 doorbird-seasonal:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/healthz; then
+              echo "healthy"; exit 0
+            fi
+            sleep 2
+          done
+          echo "never became healthy; container logs:" >&2
+          docker logs db-ci >&2
+          exit 1
+      - name: Container logs
+        if: always()
+        run: docker logs db-ci || true

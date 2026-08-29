@@ -1,0 +1,25 @@
+services:
+  doorbird-seasonal:
+    build: .
+    image: doorbird-seasonal:latest
+    container_name: doorbird-seasonal
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-8088}:8080"
+    environment:
+      TZ: "Europe/Brussels"
+      ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}"
+      SECRET_KEY: "${SECRET_KEY:?set SECRET_KEY in .env}"
+      FERNET_KEY: "${FERNET_KEY:?set FERNET_KEY in .env}"
+      DATA_DIR: "/data"
+      DAILY_RUN_HOUR: "${DAILY_RUN_HOUR:-3}"
+      DAILY_RUN_MINUTE: "${DAILY_RUN_MINUTE:-15}"
+    volumes:
+      - ./data:/data
+    networks:
+      - default
+
+networks:
+  default:
+    name: doorbird-seasonal-net

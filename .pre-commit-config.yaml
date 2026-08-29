@@ -1,0 +1,34 @@
+# Catch what CI would catch, before the commit rather than after.
+#   pip install pre-commit && pre-commit install
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.2
+    hooks:
+      - id: ruff
+        args: [--fix]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        # MP3s belong in the data volume, not the history.
+        args: [--maxkb=512]
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  - repo: local
+    hooks:
+      - id: no-env-file
+        name: refuse to commit a .env
+        # .gitignore already covers it; this is the second lock on the door,
+        # because that file holds the Fernet key that decrypts every stored
+        # door-station password.
+        entry: .env must never be committed - it holds SECRET_KEY and FERNET_KEY
+        language: fail
+        files: '^\.env$'

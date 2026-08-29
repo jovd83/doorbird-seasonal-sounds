@@ -1,0 +1,391 @@
+{% extends "base.html" %}
+{% set active_nav = "dashboard" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+
+{#
+  The last ring is the hero figure: it is the one number that tells you the
+  whole chain — button, listener, speaker — is still working. Anything over two
+  days without a ring gets the stale treatment rather than reading as calm.
+#}
+{% set rings = ring_status | selectattr('last_ring') | list %}
+{% set latest = (rings | sort(attribute='last_ring') | last) if rings else none %}
+{% set stale = latest and (latest.last_ring | hours_since(now)) > 48 %}
+{# A watcher that is alive but not connected is reconnecting, which is
+   routine. Only a thread that has stopped is worth an alert banner. #}
+{% set stopped = ring_status | rejectattr('alive') | list %}
+
+<div class="topbar">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="sub">{{ today | dt }} &middot; {{ now.strftime('%A') }}</p>
+  </div>
+  <div class="topbar-actions">
+    <span class="clock-chip">
+      {{ icon("clock", 14) }}
+      <span class="tnum">{{ now.strftime('%H:%M') }}</span>
+      <span class="sep"></span>
+      <span class="tz">{{ tz_name }}</span>
+    </span>
+    {% if not ring_chime_enabled %}
+      <form class="inline-form" method="post" action="/apply-now">
+        {{ csrf_input(request) }}
+        <button class="btn" type="submit">{{ icon("refresh", 16) }}Apply now</button>
+      </form>
+      <form class="inline-form" method="post" action="/apply-now?force=1">
+        {{ csrf_input(request) }}
+        <button class="btn" type="submit">Force re-apply</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="stack">
+
+  {% if stopped and ring_chime_enabled %}
+    <div class="note note--alert">
+      {{ icon("alert", 16) }}
+      <div class="note-body">
+        <strong>{{ stopped | map(attribute='device') | join(', ') }}
+        {{ 'has' if stopped|length == 1 else 'have' }} stopped listening.</strong>
+        {% for w in stopped %}{% if w.last_error %}{{ w.last_error }}{% endif %}{% endfor %}
+        A ring on {{ 'that door station' if stopped|length == 1 else 'those door stations' }}
+        will not play a chime until the listener is restarted.
+      </div>
+      <div class="note-actions">
+        <a class="btn btn--sm" href="/devices">{{ icon("chev-r", 14) }}Devices</a>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if ring_chime_enabled %}
+  <section class="hero {{ 'is-stale' if stale else '' }}">
+    <div class="hero-main">
+      <span class="micro">Last ring</span>
+      {% if latest %}
+        <div class="hero-line">
+          <span class="hero-figure tnum">{{ latest.last_ring.strftime('%H:%M') }}</span>
+          <span class="hero-unit tnum">:{{ latest.last_ring.strftime('%S') }}</span>
+        </div>
+        <div class="hero-meta">
+          <span>{{ latest.last_ring | since(now) }}</span>
+          <span class="sep" style="width:3px;height:3px;border-radius:999px;background:var(--faint)"></span>
+          {{ icon("station", 14) }}<span>{{ latest.device }}</span>
+        </div>
+        <p class="help">{{ latest.last_ring | dt }} &middot; {{ tz_name }}</p>
+      {% else %}
+        <div class="hero-line">
+          <span class="hero-figure" style="font-size:34px;color:var(--muted)">No rings yet</span>
+        </div>
+        <div class="hero-meta"><span>Waiting for the first press</span></div>
+        <p class="help">
+          The listener is connected; nothing has pressed the button since it started.
+        </p>
+      {% endif %}
+    </div>
+    <div class="hero-side">
+      {{ ringmark(104, "idle" if (stale or not latest) else "live", "bell") }}
+      {% if stale %}
+        <span class="chip chip--warn">{{ icon("clock") }}Stale — no ring in {{ (latest.last_ring | hours_since(now) / 24) | round(0, 'floor') | int }} days</span>
+      {% elif latest %}
+        <span class="chip chip--live"><span class="dot"></span>Listening</span>
+      {% else %}
+        <span class="chip">{{ icon("clock") }}No rings yet</span>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  <div class="row">
+    <div class="col-2">
+      <section class="card">
+        <div class="card-head">
+          <span class="card-title">Today</span>
+          <span class="card-actions">
+            {% if ring_chime_enabled %}
+              <span class="chip chip--sm">{{ icon("bell") }}Ring-chime mode</span>
+            {% endif %}
+          </span>
+        </div>
+        <div class="card-body">
+          <div class="stack-sm">
+            <span class="micro">Active sound</span>
+            {% if resolution %}
+              {% if silent_today %}
+                <h2 style="font-size:24px;color:var(--muted)">None — staying silent</h2>
+                <p class="help">
+                  No schedule is active, and “play the default when no schedule is
+                  active” is switched off in <a href="/settings">Settings</a>.
+                  Visitors hear only the door station's own chime.
+                </p>
+              {% else %}
+                <div class="inline">
+                  <h2 style="font-size:26px;letter-spacing:-0.02em">
+                    {% if resolution.schedule %}{{ resolution.schedule.sound_label }}
+                    {% else %}{{ resolution.mp3.label }}{% endif %}
+                  </h2>
+                  {% if not resolution.schedule %}
+                    <span class="chip chip--sm">{{ icon("check") }}Default</span>
+                  {% endif %}
+                </div>
+                <p class="help">{{ resolution.reason }}</p>
+              {% endif %}
+            {% else %}
+              <div class="note note--warn">
+                {{ icon("alert", 16) }}
+                <div class="note-body">
+                  <strong>No default MP3 set.</strong>
+                  Upload one and mark it default — until then a ring plays only the
+                  door station's own built-in chime.
+                </div>
+                <div class="note-actions">
+                  <a class="btn btn--sm" href="/mp3s">{{ icon("upload", 14) }}MP3s</a>
+                </div>
+              </div>
+            {% endif %}
+          </div>
+
+          <div class="kv" style="border-top:1px solid var(--line-soft);padding-top:12px">
+            <span class="kv-key">Auto response</span>
+            <span class="kv-val">
+              {% if active_auto_response %}
+                <strong style="color:var(--text)">{{ active_auto_response.sound_label }}</strong>
+                <span class="muted small">
+                  {{ active_auto_response.name }} &middot;
+                  {{ active_auto_response.delay_seconds }}s after the chime
+                </span>
+              {% else %}
+                <span class="muted">none scheduled right now</span>
+              {% endif %}
+            </span>
+          </div>
+
+          {% if next_change %}
+          <div class="kv">
+            <span class="kv-key">Next change</span>
+            <span class="kv-val">
+              <strong class="tnum" style="color:var(--text)">{{ next_change[0] | dt }}</strong>
+              <span class="muted small">{{ next_change[0] | until(now) }} — {{ next_change[1] }}</span>
+            </span>
+          </div>
+          {% endif %}
+        </div>
+        {% if ring_chime_enabled %}
+        <div class="card-foot">
+          {{ icon("info", 14) }}
+          <span>Ring-chime mode: this sound plays out of the door speaker on the next
+            ring. Nothing needs pushing to the device.</span>
+        </div>
+        {% endif %}
+      </section>
+    </div>
+
+    {% if ring_chime_enabled %}
+    <div class="col">
+      <section class="card">
+        <div class="card-head">
+          <span class="card-title">Ring listeners</span>
+          <span class="card-count">{{ ring_status | length }}</span>
+        </div>
+        <div class="card-body is-flush">
+          <div class="list">
+            {% for w in ring_status %}
+            <div class="list-row {{ '' if w.connected else ('is-warn' if w.alive else 'is-alert') }}">
+              <div class="list-main">
+                <span class="list-title">{{ w.device }}</span>
+                <span class="list-sub">
+                  {% if w.last_error %}
+                    <span style="color:var(--alert)">{{ w.last_error }}</span>
+                  {% elif w.last_ring %}
+                    last ring <span class="tnum">{{ w.last_ring | dt }}</span>
+                  {% else %}
+                    waiting for the first ring
+                  {% endif %}
+                </span>
+              </div>
+              <div class="list-side">
+                {% if w.connected %}
+                  <span class="chip chip--live chip--sm"><span class="dot"></span>Listening</span>
+                {% elif w.alive %}
+                  <span class="chip chip--warn chip--sm">{{ icon("refresh") }}Reconnecting</span>
+                {% else %}
+                  <span class="chip chip--alert chip--sm">{{ icon("alert") }}Stopped</span>
+                {% endif %}
+              </div>
+            </div>
+            {% else %}
+            <p class="list-empty">
+              No ring listeners running. Add an enabled device to start one.
+            </p>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+    </div>
+    {% endif %}
+  </div>
+
+  <section class="card">
+    <div class="card-head">
+      <span class="card-title">{{ icon("station", 16) }}Devices</span>
+      <span class="card-actions">
+        <span class="card-count">{{ devices | length }}</span>
+        <a class="btn btn--sm btn--ghost" href="/devices">Manage{{ icon("chev-r", 14) }}</a>
+      </span>
+    </div>
+    <div class="card-body is-flush">
+      <div class="list">
+        {% for d in devices %}
+        <div class="list-row {{ 'is-alert' if d.last_error else '' }} {{ '' if d.enabled else 'is-off' }}">
+          <span class="tile {{ 'is-alert' if d.last_error else '' }}">{{ icon("station", 20) }}</span>
+          <div class="list-main">
+            <span class="list-title">{{ d.name }}</span>
+            <span class="list-sub">
+              <code>{{ d.host }}</code><span class="sep"></span>
+              {% if d.last_error %}
+                <span style="color:var(--alert)">last error: {{ d.last_error }}</span>
+              {% elif d.last_applied_at %}
+                last applied <span class="tnum">{{ d.last_applied_at | dt }}</span>
+              {% else %}
+                never applied
+              {% endif %}
+            </span>
+          </div>
+          <div class="list-side">
+            {% if d.last_error %}
+              <span class="chip chip--alert chip--sm">{{ icon("alert") }}Offline</span>
+            {% elif d.enabled %}
+              <span class="chip chip--sm">{{ icon("check") }}Enabled</span>
+            {% else %}
+              <span class="chip chip--sm">{{ icon("minus") }}Disabled</span>
+            {% endif %}
+          </div>
+        </div>
+        {% else %}
+        <p class="list-empty">No devices yet. <a href="/devices">Add one →</a></p>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <span class="card-title">{{ icon("bell", 16) }}Chime schedules</span>
+      <span class="card-actions">
+        <span class="card-count">{{ schedules | length }}</span>
+        <a class="btn btn--sm btn--ghost" href="/schedules">Open{{ icon("chev-r", 14) }}</a>
+      </span>
+    </div>
+    <div class="card-body is-flush">
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr>
+            <th>Name</th><th>From</th><th>To</th><th>Years</th>
+            <th>Time of day</th><th>Applies to</th><th>Sound</th>
+            <th class="num">Priority</th><th>Enabled</th>
+          </tr></thead>
+          <tbody>
+          {% for s in schedules %}
+            <tr class="{{ '' if s.enabled else 'is-off' }}">
+              <td class="name">{{ s.name }}</td>
+              <td class="tnum nowrap">{{ s.start_month | md(s.start_day) }}</td>
+              <td class="tnum nowrap">{{ s.end_month | md(s.end_day) }}</td>
+              <td class="nowrap">
+                {% if s.start_year is none %}every year
+                {% elif s.end_year and s.end_year != s.start_year %}{{ s.start_year }}–{{ s.end_year }}
+                {% else %}{{ s.start_year }}{% endif %}
+              </td>
+              <td class="tnum nowrap">{{ s | window }}</td>
+              <td>
+                {% if s.devices %}{{ s.devices | map(attribute='name') | join(', ') }}
+                {% else %}<span class="muted">all</span>{% endif %}
+              </td>
+              <td>
+                <span class="inline-tight">
+                  {{ icon("shuffle", 14) if s.collection else icon("wave", 14) }}
+                  {{ s.sound_label }}
+                </span>
+              </td>
+              <td class="num tnum">{{ s.priority }}</td>
+              <td>
+                {% if s.enabled %}
+                  <span class="on-cell">{{ icon("check", 13) }}On</span>
+                {% else %}
+                  <span class="on-cell is-off">{{ icon("minus", 13) }}Off</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="9" class="muted">
+              No chime schedules yet. <a href="/schedules">Add one →</a>
+            </td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <span class="card-title">{{ icon("speech", 16) }}Auto-response schedules</span>
+      <span class="card-actions">
+        <span class="card-count">{{ auto_responses | length }}</span>
+        <a class="btn btn--sm btn--ghost" href="/auto-responses">Open{{ icon("chev-r", 14) }}</a>
+      </span>
+    </div>
+    <div class="card-body is-flush">
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr>
+            <th>Name</th><th>From</th><th>To</th><th>Years</th>
+            <th>Time of day</th><th>Wait</th><th>Applies to</th><th>Sound</th>
+            <th class="num">Priority</th><th>Enabled</th>
+          </tr></thead>
+          <tbody>
+          {% for s in auto_responses %}
+            <tr class="{{ '' if s.enabled else 'is-off' }}">
+              <td class="name">{{ s.name }}</td>
+              <td class="tnum nowrap">{{ s.start_month | md(s.start_day) }}</td>
+              <td class="tnum nowrap">{{ s.end_month | md(s.end_day) }}</td>
+              <td class="nowrap">
+                {% if s.start_year is none %}every year
+                {% elif s.end_year and s.end_year != s.start_year %}{{ s.start_year }}–{{ s.end_year }}
+                {% else %}{{ s.start_year }}{% endif %}
+              </td>
+              <td class="tnum nowrap">{{ s | window }}</td>
+              <td class="nowrap">
+                <span class="chip chip--sm">{{ icon("clock") }}{{ s.delay_seconds }} s</span>
+              </td>
+              <td>
+                {% if s.devices %}{{ s.devices | map(attribute='name') | join(', ') }}
+                {% else %}<span class="muted">all</span>{% endif %}
+              </td>
+              <td>
+                <span class="inline-tight">
+                  {{ icon("shuffle", 14) if s.collection else icon("speech", 14) }}
+                  {{ s.sound_label }}
+                </span>
+              </td>
+              <td class="num tnum">{{ s.priority }}</td>
+              <td>
+                {% if s.enabled %}
+                  <span class="on-cell">{{ icon("check", 13) }}On</span>
+                {% else %}
+                  <span class="on-cell is-off">{{ icon("minus", 13) }}Off</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="10" class="muted">
+              No auto responses yet. <a href="/auto-responses">Add one →</a>
+            </td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</div>
+{% endblock %}

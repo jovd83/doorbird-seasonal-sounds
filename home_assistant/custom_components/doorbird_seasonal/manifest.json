@@ -1,0 +1,13 @@
+{
+  "domain": "doorbird_seasonal",
+  "name": "DoorBird Seasonal Sounds",
+  "version": "0.1.0",
+  "documentation": "https://github.com/jovd83/doorbird-seasonal",
+  "issue_tracker": "https://github.com/jovd83/doorbird-seasonal/issues",
+  "codeowners": ["@jovd83"],
+  "config_flow": false,
+  "iot_class": "cloud_push",
+  "integration_type": "hub",
+  "requirements": ["httpx>=0.27"],
+  "dependencies": []
+}

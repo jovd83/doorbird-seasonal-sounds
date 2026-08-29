@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% set active_nav = "mp3s" %}
+{% set wide_page = true %}
+{% block title %}MP3 library{% endblock %}
+{% block content %}
+
+<div class="topbar">
+  <div>
+    <h1>MP3 library</h1>
+    <p class="sub">
+      DoorBird expects MP3 at 44.1 or 48 kHz, max 10 seconds. Files outside these
+      limits upload fine but the door station will likely reject them.
+    </p>
+  </div>
+  <div class="topbar-actions">
+    <a class="btn btn--primary" href="#upload">{{ icon("upload", 16) }}Upload MP3</a>
+  </div>
+</div>
+
+<div class="stack">
+
+  <div class="note note--info">
+    {{ icon("info", 16) }}
+    <div class="note-body">
+      A <strong>chime</strong> is what plays the instant the button is pressed; an
+      <strong>auto response</strong> is the spoken message that follows it. Only chimes
+      can be the default sound. Changing a file's type is refused while a schedule or
+      collection still points at it.
+    </div>
+  </div>
+
+  <section class="card">
+    <div class="card-head">
+      <span class="card-title">{{ icon("wave", 16) }}Library</span>
+      <span class="card-count">{{ items | length }} file{{ '' if items|length == 1 else 's' }}</span>
+    </div>
+    <div class="card-body is-flush">
+      {% if items %}
+      <div class="tbl-wrap">
+        <table class="tbl tbl--dense">
+          <thead><tr>
+            <th>Label</th><th style="min-width:11rem">Type</th>
+            <th class="num">Duration</th><th class="num">Sample rate</th>
+            <th class="num">Bitrate</th><th class="num">Size</th>
+            <th>Preview</th><th></th>
+          </tr></thead>
+          <tbody>
+          {% for m in items %}
+            {# Out of spec is a warning, not a failure: it uploads fine, the
+               door station is what rejects it. #}
+            {% set out_of_spec = (m.sample_rate_hz not in (44100, 48000))
+                                 or ((m.duration_seconds or 0) > 10) %}
+            <tr class="{{ 'is-warn' if out_of_spec else '' }}">
+              <td>
+                <span class="inline-tight">
+                  <span class="name">{{ m.label }}</span>
+                  {% if m.is_default %}
+                    <span class="chip chip--live chip--sm">{{ icon("check") }}Default</span>
+                  {% endif %}
+                  {% if out_of_spec %}
+                    <span class="chip chip--warn chip--sm">{{ icon("alert") }}Out of spec</span>
+                  {% endif %}
+                </span>
+              </td>
+              <td>
+                {# Changing the type is a real edit, so it posts; the button only
+                   appears once the select has actually been moved. #}
+                <form method="post" action="/mp3s/{{ m.id }}/kind"
+                      class="input-group input-sm js-kind-form">
+                  {{ csrf_input(request) }}
+                  <select name="kind" data-current="{{ m.kind }}" aria-label="Type of {{ m.label }}">
+                    {% for value, label in kinds.items() %}
+                      <option value="{{ value }}" {% if value == m.kind %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                  <button class="btn btn--sm btn--primary js-kind-save" type="submit" hidden>Save</button>
+                </form>
+              </td>
+              <td class="num tnum">{{ '%.2f'|format(m.duration_seconds or 0) }} s</td>
+              <td class="num tnum">{{ m.sample_rate_hz or '?' }}</td>
+              <td class="num tnum">{{ m.bitrate_kbps or '?' }} kbps</td>
+              <td class="num tnum">{{ '%.0f'|format(m.size_bytes/1024) }} KB</td>
+              <td><audio controls preload="none" src="/mp3s/{{ m.id }}/file"></audio></td>
+              <td class="nowrap">
+                <span class="inline-tight">
+                  {% if not m.is_default and m.kind == 'chime' %}
+                  <form class="inline-form" method="post" action="/mp3s/{{ m.id }}/default">
+                    {{ csrf_input(request) }}
+                    <button class="btn btn--sm" type="submit">Set default</button>
+                  </form>
+                  {% endif %}
+                  <form class="inline-form" method="post" action="/mp3s/{{ m.id }}/delete"
+                        onsubmit="return confirm('Delete {{ m.label }}?');">
+                    {{ csrf_input(request) }}
+                    <button class="icon-btn icon-btn--danger" type="submit"
+                            aria-label="Delete {{ m.label }}">{{ icon("trash", 16) }}</button>
+                  </form>
+                </span>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty">
+        {{ ringmark(112, "idle", "wave") }}
+        <h2>No MP3s yet</h2>
+        <p>
+          Upload a chime and mark it <strong>default</strong> — that is the sound the
+          doorbell falls back to whenever no chime schedule is active. Auto-response
+          clips can wait until you need one.
+        </p>
+        <a class="btn btn--primary" href="#upload">{{ icon("upload", 16) }}Upload MP3</a>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="card" id="upload">
+    <div class="card-head">
+      <span class="card-title">{{ icon("upload", 16) }}Upload MP3</span>
+      <span class="card-count">44.1 or 48 kHz &middot; 10 s max &middot; 2 MB cap</span>
+    </div>
+    <div class="card-body">
+      {# Every field is labelled: an unlabelled Type dropdown sitting between the
+         label box and the file picker reads as decoration and gets missed. #}
+      <form method="post" action="/mp3s/upload" enctype="multipart/form-data" class="stack">
+        {{ csrf_input(request) }}
+        <div class="row" style="gap:12px">
+          <div class="field col">
+            <label for="up_label">Label</label>
+            <input id="up_label" name="label" placeholder="e.g. Christmas bells" required>
+          </div>
+          <div class="field col">
+            <label for="upload_kind">Type</label>
+            <select name="kind" id="upload_kind">
+              {% for value, label in kinds.items() %}
+                <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field col">
+            <label for="up_file">File</label>
+            <input type="file" id="up_file" name="file" accept="audio/mpeg,.mp3" required>
+          </div>
+        </div>
+        <div class="inline" style="gap:20px">
+          <label class="switch">
+            <input type="checkbox" name="is_default" value="true" id="dflt">
+            <span class="track"></span>
+            <span class="switch-label">Mark as default</span>
+            <span class="state"><span class="on">Yes</span><span class="off">No</span></span>
+          </label>
+          <span class="help" id="dflt_hint">Chimes only.</span>
+          <span class="push"></span>
+          <button class="btn btn--primary" type="submit">{{ icon("upload", 16) }}Upload</button>
+        </div>
+        <p class="help">
+          <strong>Chime</strong> plays the instant the button is pressed.
+          <strong>Auto response</strong> is a spoken message played afterwards by an
+          <a href="/auto-responses">auto-response schedule</a>.
+        </p>
+      </form>
+    </div>
+  </section>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // The type select is a form on its own: reveal its Save button only once the
+  // value differs from what is stored, so the table stays quiet at rest.
+  document.querySelectorAll(".js-kind-form").forEach(function (form) {
+    var select = form.querySelector("select[name=kind]");
+    var save = form.querySelector(".js-kind-save");
+    select.addEventListener("change", function () {
+      save.hidden = select.value === select.dataset.current;
+    });
+  });
+
+  // "Mark as default" only means anything for a chime.
+  (function () {
+    var kind = document.getElementById("upload_kind");
+    var dflt = document.getElementById("dflt");
+    if (!kind || !dflt) return;
+    var sync = function () {
+      var chime = kind.value === "chime";
+      dflt.disabled = !chime;
+      if (!chime) dflt.checked = false;
+    };
+    kind.addEventListener("change", sync);
+    sync();
+  })();
+</script>
+{% endblock %}

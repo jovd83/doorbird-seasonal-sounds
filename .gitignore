@@ -1,0 +1,51 @@
+# --- secrets ---------------------------------------------------------
+# Web-UI login, session key, and the Fernet key that decrypts stored
+# device passwords. Never commit this; .env.example documents the shape.
+.env
+*.env
+!.env.example
+
+# --- your data, not the app's ----------------------------------------
+# The database holds your door stations (with encrypted passwords), your
+# schedules and your audit history. The MP3s are your own audio, and the
+# ulaw directory is a transcoded copy of them.
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+# Backups too: a copy of the database holds the same encrypted device
+# passwords as the original, and a timestamped name does not end in `.db`.
+data/*backup*
+data/*.bak
+data/*.sqlite*
+data/mp3/*
+data/ulaw/*
+data/logs/*
+!data/.gitkeep
+!data/mp3/.gitkeep
+!data/ulaw/.gitkeep
+!data/logs/.gitkeep
+
+# --- third-party material --------------------------------------------
+# DoorBird's own compiled SPA bundle, kept locally for endpoint discovery.
+# It is their intellectual property - do not redistribute it.
+discovery/captures/
+
+# --- local deployment notes ------------------------------------------
+# Generated per-install; may contain host names and addresses.
+deploy/**/local-*
+
+# --- python ----------------------------------------------------------
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+# Dependency pins live in requirements.txt (what the image installs) and
+# pyproject.toml (what the direct dependencies are). A uv lockfile would be a
+# third, undocumented source of truth.
+uv.lock

@@ -1,0 +1,53 @@
+{#
+  Standalone, and deliberately so.
+
+  This page used to extend base.html, which calls shell() and theme() — both of
+  which query the database. That made the one page whose entire job is to work
+  when something is broken depend on the thing most likely to be broken: with
+  the database unavailable, rendering the error page raised a *second*
+  exception, the original error was lost behind it, and the user got a raw ASGI
+  traceback instead of an explanation.
+
+  So: no shell(), no theme(), no globals that touch the database. The colour
+  scheme comes from the browser's own preference via prefers-color-scheme,
+  which needs nothing from us. Only `icon()` is used, and that reads from a
+  dict in Python.
+#}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>{{ status }} — {{ heading }} &middot; DoorBird Seasonal</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='20' font-size='20'>%F0%9F%94%94</text></svg>">
+</head>
+<body>
+<main class="error-page">
+  <div class="error-card">
+
+    {% set tone = "alert" if variant in ("danger", "warning") else "info" %}
+
+    <div class="error-head">
+      <span class="chip {{ 'chip--alert' if tone == 'alert' else '' }}">
+        {{ icon("alert", 14) }}{{ status }}
+      </span>
+      <h1>{{ heading }}</h1>
+    </div>
+
+    <section class="card {{ 'is-alert' if tone == 'alert' else '' }}">
+      <div class="card-body">
+        <p style="font-size:14px;line-height:1.6;color:var(--text2)">{{ detail }}</p>
+        {% if hint %}<p class="help">{{ hint }}</p>{% endif %}
+      </div>
+      <div class="card-foot">
+        <a class="btn btn--sm btn--primary" href="{{ back }}">{{ icon("arrow-r", 14) }}Go back</a>
+        <a class="btn btn--sm" href="/dashboard">Dashboard</a>
+      </div>
+    </section>
+
+  </div>
+</main>
+</body>
+</html>

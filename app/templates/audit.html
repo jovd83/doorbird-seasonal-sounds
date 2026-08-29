@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% set active_nav = "audit" %}
+{% set wide_page = true %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+
+{% set failed = rows | rejectattr('success') | list %}
+
+<div class="topbar">
+  <div>
+    <h1>Audit log</h1>
+    <p class="sub">
+      Every apply, chime and auto response this app has attempted, newest first.
+      Failures keep their full error text so a broken device is diagnosable from here.
+    </p>
+  </div>
+  <div class="topbar-actions">
+    <a class="btn" href="/audit/download">{{ icon("download", 16) }}Download log (CSV)</a>
+    {# Clearing is irreversible, so the confirm names what is about to go. #}
+    <form class="inline-form" method="post" action="/audit/clear"
+          onsubmit="return confirm('Delete all {{ total }} audit entries? This cannot be undone — download the log first if you want to keep it.');">
+      {{ csrf_input(request) }}
+      <button class="btn btn--danger" type="submit" {% if not total %}disabled{% endif %}>
+        {{ icon("trash", 16) }}Clear log
+      </button>
+    </form>
+  </div>
+</div>
+
+<div class="stack">
+
+  <section class="card">
+    <div class="card-head">
+      <span class="card-title">{{ icon("log", 16) }}Entries</span>
+      <span class="card-actions">
+        {% if failed %}
+          <span class="chip chip--alert chip--sm">
+            {{ icon("alert") }}{{ failed | length }} failed on this page
+          </span>
+        {% endif %}
+        <span class="card-count">{{ rows | length }} of {{ total }}</span>
+      </span>
+    </div>
+    <div class="card-body is-flush">
+      {% if rows %}
+      <div class="tbl-wrap">
+        <table class="tbl tbl--dense">
+          <thead><tr>
+            <th>When</th><th>Action</th><th>Device</th><th>MP3</th>
+            <th>Schedule</th><th>Result</th><th>Message</th>
+          </tr></thead>
+          <tbody>
+          {% for r in rows %}
+            {% set device = devices.get(r.device_id) if r.device_id else none %}
+            {% set mp3 = mp3s.get(r.mp3_id) if r.mp3_id else none %}
+            {% set sched = scheds.get(r.schedule_id) if r.schedule_id else none %}
+            <tr class="{{ '' if r.success else 'is-fail' }}">
+              <td class="tnum nowrap">{{ r.ts | dt }}</td>
+              <td class="nowrap">
+                <span class="inline-tight">
+                  {% if r.action == 'chime' %}{{ icon("wave", 13) }}
+                  {% elif r.action == 'auto-response' %}{{ icon("speech", 13) }}
+                  {% elif r.action == 'apply' %}{{ icon("refresh", 13) }}
+                  {% else %}{{ icon("trash", 13) }}{% endif %}
+                  <code>{{ r.action }}</code>
+                </span>
+              </td>
+              <td class="nowrap">{{ device.name if device else '—' }}</td>
+              <td class="nowrap">{{ mp3.label if mp3 else '—' }}</td>
+              <td class="nowrap">{{ sched.name if sched else '—' }}</td>
+              <td class="nowrap">
+                {% if r.success %}
+                  <span class="result-ok">{{ icon("check", 12) }}OK</span>
+                {% else %}
+                  <span class="result-fail">{{ icon("x", 12) }}Failed</span>
+                {% endif %}
+              </td>
+              <td>{{ r.message }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty">
+        {{ ringmark(96, "idle", "log") }}
+        <h2>No audit entries yet</h2>
+        <p>
+          Press the doorbell, or use <strong>Play chime</strong> on a device, and the
+          attempt shows up here — successful or not.
+        </p>
+        <a class="btn" href="/devices">{{ icon("station", 16) }}Devices</a>
+      </div>
+      {% endif %}
+    </div>
+    <div class="card-foot">
+      {{ icon("info", 14) }}
+      <span>
+        Showing the {{ rows|length }} most recent of <strong style="color:var(--text2)">{{ total }}</strong>
+        entries. The CSV download contains the whole log, oldest first.
+      </span>
+      <span class="push"></span>
+      <span>{{ tz_name }}</span>
+    </div>
+  </section>
+
+</div>
+{% endblock %}

@@ -1,0 +1,56 @@
+{#
+  Standalone: the sign-in page has no shell. The theme still comes from the
+  stored setting so the app does not change colour the moment you log in.
+#}
+<!doctype html>
+<html lang="en" data-theme="{{ shell(request).theme }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Sign in &middot; DoorBird Seasonal</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='20' font-size='20'>%F0%9F%94%94</text></svg>">
+</head>
+<body>
+<main class="login-page">
+  <div class="login-card">
+    <div class="login-head">
+      {{ ringmark(88, "live", "bell") }}
+      <div>
+        <h1 style="font-size:22px">DoorBird Seasonal</h1>
+        <p class="help" style="margin-top:4px">Seasonal sounds for your door stations</p>
+      </div>
+    </div>
+
+    {% if error %}
+      <div class="note note--alert">
+        {{ icon("alert", 16) }}
+        <div class="note-body">{{ error }}</div>
+      </div>
+    {% endif %}
+
+    <section class="card">
+      <div class="card-body">
+        <form method="post" action="/login" class="stack">
+          {{ csrf_input(request) }}
+          <input type="hidden" name="next" value="{{ next }}">
+          <div class="field">
+            <label for="login_user">Username</label>
+            <input id="login_user" name="username" autocomplete="username" autofocus required>
+          </div>
+          <div class="field">
+            <label for="login_pw">Password</label>
+            <input id="login_pw" type="password" name="password"
+                   autocomplete="current-password" required>
+          </div>
+          <button class="btn btn--primary btn--full" type="submit">Sign in</button>
+        </form>
+      </div>
+    </section>
+
+    <p class="help" style="text-align:center">Running locally &middot; {{ tz_name }}</p>
+  </div>
+</main>
+</body>
+</html>

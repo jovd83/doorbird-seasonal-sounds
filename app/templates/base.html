@@ -1,0 +1,134 @@
+{#
+  App shell. The colour scheme is stamped on <html> server-side so a page never
+  flashes the wrong theme on load, and the sidebar and the mobile bar both
+  render from templating.NAV so a page cannot go missing from one of them.
+#}
+{% set st = shell(request) %}
+<!doctype html>
+<html lang="en" data-theme="{{ st.theme }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>{% block title %}DoorBird Seasonal{% endblock %} &middot; DoorBird Seasonal</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><text y='20' font-size='20'>%F0%9F%94%94</text></svg>">
+</head>
+<body>
+
+{# The "More" sheet is a checkbox + label so it works with scripting off. #}
+<input class="more-toggle" type="checkbox" id="more-toggle" aria-label="More pages">
+
+<div class="app">
+
+  <aside class="sidebar">
+    <a class="brand" href="/dashboard">
+      <span class="brand-mark">{{ ringmark(26, "live", "bell") }}</span>
+      <span>
+        <span class="brand-name">DoorBird</span><br>
+        <span class="brand-sub">Seasonal Sounds</span>
+      </span>
+    </a>
+
+    <nav class="nav">
+      {% for n in NAV %}
+        <a class="nav-item {{ 'is-active' if n.key == active_nav else '' }}"
+           href="{{ n.href }}" {% if n.key == active_nav %}aria-current="page"{% endif %}>
+          {{ icon(n.icon, 18) }}<span>{{ n.label }}</span>
+        </a>
+      {% endfor %}
+    </nav>
+
+    <div class="sidebar-spacer"></div>
+
+    <div class="trigger-card">
+      <span class="micro">Ring trigger</span>
+      <span class="trigger-mode">{{ st.trigger_label }}</span>
+      <span class="trigger-state {{ st.listener_tone }}">
+        <span class="dot"></span>{{ st.listener_label }}
+      </span>
+    </div>
+
+    {# POST, not a link: signing out is a state change, and as a GET any third
+       party page could trigger it with an <img> tag. #}
+    <form method="post" action="/logout" class="logout-form">
+      {{ csrf_input(request) }}
+      <button class="logout" type="submit">{{ icon("power", 16) }}<span>Log out</span></button>
+    </form>
+  </aside>
+
+  <main class="main">
+
+    <header class="mobile-head">
+      <a class="brand" href="/dashboard">
+        <span class="brand-mark">{{ ringmark(20, "live", "bell") }}</span>
+        <span class="mobile-head-title">{{ self.title() }}</span>
+      </a>
+      <span class="trigger-state {{ st.listener_tone }}">
+        <span class="dot"></span>{{ st.listener_label }}
+      </span>
+    </header>
+
+    <div class="main-inner {{ 'is-wide' if wide_page else '' }}">
+
+      {% set msg = request.query_params.get('msg') %}
+      {% set warn = request.query_params.get('warn') %}
+      {% if msg or warn %}
+        <div class="stack" style="margin-bottom:16px">
+          {% if msg %}
+            <div class="note note--live">
+              {{ icon("check", 16) }}<div class="note-body">{{ msg }}</div>
+            </div>
+          {% endif %}
+          {% if warn %}
+            <div class="note note--warn">
+              {{ icon("alert", 16) }}<div class="note-body">{{ warn }}</div>
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      {% block content %}{% endblock %}
+
+      <footer class="page-foot">
+        DoorBird Seasonal Sounds &middot; running locally &middot; times in {{ tz_name }}
+      </footer>
+    </div>
+  </main>
+</div>
+
+<nav class="mobile-bar">
+  {% for n in MOBILE_TABS %}
+    <a class="mobile-tab {{ 'is-active' if n.key == active_nav else '' }}" href="{{ n.href }}">
+      {{ icon(n.icon, 20) }}
+      <span>{{ n.short }}</span>
+      <span class="bar"></span>
+    </a>
+  {% endfor %}
+  <label class="mobile-tab {{ 'is-active' if active_nav in MORE_KEYS else '' }}"
+         for="more-toggle">
+    {{ icon("more", 20) }}
+    <span>More</span>
+    <span class="bar"></span>
+  </label>
+</nav>
+
+<div class="more-sheet">
+  <label class="more-close" for="more-toggle" aria-label="Close"></label>
+  <div class="more-panel">
+    <div class="more-grip"></div>
+    {% for n in MORE_TABS %}
+      <a class="more-item {{ 'is-active' if n.key == active_nav else '' }}" href="{{ n.href }}">
+        {{ icon(n.icon, 20) }}<span>{{ n.label }}</span>
+      </a>
+    {% endfor %}
+    <form method="post" action="/logout">
+      {{ csrf_input(request) }}
+      <button class="more-item" type="submit">{{ icon("power", 20) }}<span>Log out</span></button>
+    </form>
+  </div>
+</div>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

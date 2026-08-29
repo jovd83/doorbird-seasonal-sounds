@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% set active_nav = "collections" %}
+{% block title %}Collections{% endblock %}
+{% block content %}
+
+<div class="topbar">
+  <div>
+    <h1>Collections</h1>
+    <p class="sub">
+      A collection is a bag of interchangeable sounds. Point a schedule at one and a
+      different member plays on every ring — three Christmas chimes instead of the same
+      one for six weeks. The same file is never drawn twice in a row.
+    </p>
+  </div>
+  <div class="topbar-actions">
+    <a class="btn btn--primary" href="#add-collection">{{ icon("plus", 16) }}New collection</a>
+  </div>
+</div>
+
+<div class="stack">
+
+  <div class="note note--info">
+    {{ icon("shuffle", 16) }}
+    <div class="note-body">
+      A collection only holds MP3s of its own type — a chime collection can never leak
+      a spoken message into the doorbell.
+    </div>
+  </div>
+
+  {% for c in collections %}
+    {% set used_by = users.get(c.id, []) %}
+    <section class="card">
+      <div class="card-head">
+        <span class="card-title">{{ icon("shuffle", 16) }}{{ c.name }}</span>
+        <span class="card-actions">
+          <span class="chip chip--sm">
+            {{ icon("bell") if c.kind == 'chime' else icon("speech") }}{{ c.kind_label }}
+          </span>
+          <span class="card-count">{{ c.mp3s|length }} sound{{ '' if c.mp3s|length == 1 else 's' }}</span>
+        </span>
+      </div>
+      <div class="card-body">
+        <form method="post" action="/collections/{{ c.id }}/update" class="stack">
+          {{ csrf_input(request) }}
+          <div class="row" style="gap:12px">
+            <div class="field col">
+              <label for="coll_name_{{ c.id }}">Name</label>
+              <input id="coll_name_{{ c.id }}" name="name" value="{{ c.name }}" required>
+              <p class="help">
+                {% if used_by %}
+                  Used by {{ used_by | join(', ') }}.
+                {% else %}
+                  Not used by any schedule yet.
+                {% endif %}
+              </p>
+            </div>
+            <div class="field col-2">
+              <label for="coll_mp3s_{{ c.id }}">Members</label>
+              {% set candidates = mp3s | selectattr('kind', 'equalto', c.kind) | list %}
+              {% set chosen = c.mp3s | map(attribute='id') | list %}
+              <select id="coll_mp3s_{{ c.id }}" name="mp3_ids" multiple
+                      size="{{ [candidates|length, 6] | min if candidates else 1 }}">
+                {% for m in candidates %}
+                  <option value="{{ m.id }}" {% if m.id in chosen %}selected{% endif %}>
+                    {{ m.label }} ({{ '%.1fs'|format(m.duration_seconds or 0) }})
+                  </option>
+                {% endfor %}
+              </select>
+              {% if not candidates %}
+                <p class="help">
+                  No {{ c.kind_label|lower }} MP3s in the <a href="/mp3s">library</a> yet.
+                </p>
+              {% else %}
+                <p class="help">Ctrl/&#8984;-click to pick several.</p>
+              {% endif %}
+            </div>
+          </div>
+          <div class="inline">
+            <span class="push"></span>
+            <button class="btn btn--primary" type="submit">Save changes</button>
+          </div>
+        </form>
+      </div>
+      <div class="card-foot">
+        <span class="push"></span>
+        <form class="inline-form" method="post" action="/collections/{{ c.id }}/delete"
+              onsubmit="return confirm('Delete collection {{ c.name }}?');">
+          {{ csrf_input(request) }}
+          <button class="btn btn--sm btn--danger" type="submit">
+            {{ icon("trash", 14) }}Delete collection
+          </button>
+        </form>
+      </div>
+    </section>
+  {% else %}
+    <section class="card">
+      <div class="empty">
+        {{ ringmark(96, "idle", "shuffle") }}
+        <h2>No collections yet</h2>
+        <p>
+          Group a few interchangeable sounds and a schedule pointing at the collection
+          plays a different one on every ring.
+        </p>
+        <a class="btn btn--primary" href="#add-collection">{{ icon("plus", 16) }}New collection</a>
+      </div>
+    </section>
+  {% endfor %}
+
+  <section class="card" id="add-collection">
+    <div class="card-head">
+      <span class="card-title">{{ icon("plus", 16) }}Add a collection</span>
+    </div>
+    <div class="card-body">
+      <form method="post" action="/collections/create" class="stack">
+        {{ csrf_input(request) }}
+        <div class="row" style="gap:12px">
+          <div class="field col">
+            <label for="new_coll_name">Name</label>
+            <input id="new_coll_name" name="name" placeholder="e.g. Christmas chimes" required>
+          </div>
+          <div class="field col">
+            <label for="new_coll_kind">Type</label>
+            <select id="new_coll_kind" name="kind">
+              {% for value, label in kinds.items() %}
+                <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field col-2">
+            <label for="new_coll_mp3s">Members</label>
+            <select id="new_coll_mp3s" name="mp3_ids" multiple
+                    size="{{ [mp3s|length, 5] | min if mp3s else 1 }}">
+              {% for m in mp3s %}
+                <option value="{{ m.id }}" data-kind="{{ m.kind }}">
+                  {{ m.label }} — {{ m.kind_label }}
+                </option>
+              {% endfor %}
+            </select>
+            <p class="help">
+              Ctrl/&#8984;-click to pick several. Only MP3s matching the type above are
+              listed. You can add members later.
+            </p>
+          </div>
+        </div>
+        <div class="inline">
+          <span class="push"></span>
+          <button class="btn btn--primary" type="submit">{{ icon("plus", 16) }}Add collection</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // The member list on the "add" form follows the type select: offering a
+  // spoken message inside a chime collection would only produce a 400.
+  (function () {
+    var kind = document.getElementById("new_coll_kind");
+    var list = document.getElementById("new_coll_mp3s");
+    if (!kind || !list) return;
+    var sync = function () {
+      Array.prototype.forEach.call(list.options, function (opt) {
+        var match = opt.dataset.kind === kind.value;
+        opt.hidden = !match;
+        if (!match) opt.selected = false;
+      });
+    };
+    kind.addEventListener("change", sync);
+    sync();
+  })();
+</script>
+{% endblock %}

@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% set active_nav = "devices" %}
+{% block title %}Devices{% endblock %}
+{% block content %}
+
+<div class="topbar">
+  <div>
+    <h1>Devices</h1>
+    <p class="sub">
+      DoorBird door stations on this LAN. The container talks to each device
+      directly on its LAN address — never through the DoorBird cloud.
+    </p>
+  </div>
+  <div class="topbar-actions">
+    <a class="btn btn--primary" href="#add-device">{{ icon("plus", 16) }}Add a DoorBird</a>
+  </div>
+</div>
+
+<div class="stack">
+
+  <div class="note note--info">
+    {{ icon("info", 16) }}
+    <div class="note-body">
+      <strong>Host</strong> — the device's LAN IP (e.g. <code>192.168.1.50</code>) or hostname.
+      <strong>Username / password</strong> — any user with the <strong>API operator</strong>
+      and/or <strong>Watch always</strong> permission enabled in the DoorBird app
+      (<em>Settings → Administration → User</em>). The factory <code>…0000</code> admin
+      works, so does any custom user you created and granted those permissions.
+      Hit <strong>Test</strong> after saving — a successful test means the host is
+      reachable and the credentials are accepted.
+    </div>
+  </div>
+
+  {% for d in devices %}
+  <section class="card {{ 'is-alert' if d.last_error else '' }}">
+    <div class="card-head">
+      <span class="card-title">
+        <span class="tile {{ 'is-alert' if d.last_error else '' }}">{{ icon("station", 20) }}</span>
+        {{ d.name }}
+      </span>
+      <span class="card-actions">
+        {% if d.use_https %}<span class="chip chip--sm">{{ icon("key") }}HTTPS{% if d.verify_tls %} (verified){% endif %}</span>{% endif %}
+        {% if d.last_error %}
+          <span class="chip chip--alert chip--sm">{{ icon("alert") }}Last test failed</span>
+        {% else %}
+          <span class="chip chip--sm">{{ icon("check") }}OK</span>
+        {% endif %}
+        {% if d.enabled %}
+          <span class="chip chip--live chip--sm"><span class="dot"></span>Enabled</span>
+        {% else %}
+          <span class="chip chip--sm">{{ icon("minus") }}Disabled</span>
+        {% endif %}
+      </span>
+    </div>
+
+    <div class="card-body">
+      <form method="post" action="/devices/{{ d.id }}/update" class="stack">
+        {{ csrf_input(request) }}
+        <div class="row" style="gap:12px">
+          <div class="field col">
+            <label for="name_{{ d.id }}">Name</label>
+            <input id="name_{{ d.id }}" name="name" value="{{ d.name }}" required>
+          </div>
+          <div class="field col">
+            <label for="host_{{ d.id }}">Host</label>
+            <input id="host_{{ d.id }}" name="host" value="{{ d.host }}" required>
+          </div>
+          <div class="field col">
+            <label for="user_{{ d.id }}">Username</label>
+            <input id="user_{{ d.id }}" name="username" value="{{ d.username }}" required>
+          </div>
+          <div class="field col">
+            <label for="pw_{{ d.id }}">Password</label>
+            <input id="pw_{{ d.id }}" type="password" name="password" placeholder="(unchanged)">
+          </div>
+        </div>
+
+        <div class="inline" style="gap:28px">
+          <label class="switch">
+            <input type="checkbox" name="use_https" value="true" {% if d.use_https %}checked{% endif %}>
+            <span class="track"></span>
+            <span class="switch-label">HTTPS</span>
+            <span class="state"><span class="on">On</span><span class="off">Off</span></span>
+          </label>
+          {# Off for a stock door station: it ships a self-signed certificate
+             and is reached by IP, so verification cannot succeed. Only turn it
+             on if you have installed a real certificate. #}
+          <label class="switch">
+            <input type="checkbox" name="verify_tls" value="true" {% if d.verify_tls %}checked{% endif %}>
+            <span class="track"></span>
+            <span class="switch-label">Verify certificate</span>
+            <span class="state"><span class="on">On</span><span class="off">Off</span></span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" name="enabled" value="true" {% if d.enabled %}checked{% endif %}>
+            <span class="track"></span>
+            <span class="switch-label">Enabled</span>
+            <span class="state"><span class="on">On</span><span class="off">Off</span></span>
+          </label>
+          <span class="push"></span>
+          <button class="btn btn--primary" type="submit">Save changes</button>
+        </div>
+      </form>
+
+      <div class="kv" style="border-top:1px solid var(--line-soft);padding-top:12px">
+        <span class="kv-key">Last applied</span>
+        <span class="kv-val tnum">{{ d.last_applied_at | dt }}</span>
+      </div>
+      <div class="kv">
+        <span class="kv-key">Status</span>
+        <span class="kv-val">
+          {% if d.last_error %}
+            <span style="color:var(--alert)">{{ d.last_error }}</span>
+          {% else %}
+            <span class="chip chip--sm">{{ icon("check") }}No errors</span>
+          {% endif %}
+        </span>
+      </div>
+    </div>
+
+    <div class="card-foot">
+      <form class="inline-form" method="post" action="/devices/{{ d.id }}/test">
+        {{ csrf_input(request) }}
+        <button class="btn btn--sm" type="submit">{{ icon("check", 14) }}Test</button>
+      </form>
+      <form class="inline-form" method="post" action="/devices/{{ d.id }}/probe">
+        {{ csrf_input(request) }}
+        <button class="btn btn--sm" type="submit"
+                title="Scan a list of candidate button-sound endpoints on this device">
+          {{ icon("search", 14) }}Probe
+        </button>
+      </form>
+      <a class="btn btn--sm" href="http://{{ d.host }}/" target="_blank" rel="noopener"
+         title="Open the DoorBird's own admin in a new tab — quickest way to verify credentials">
+        {{ icon("ext", 14) }}Browse
+      </a>
+      <form class="inline-form" method="post" action="/devices/{{ d.id }}/chime"
+            onsubmit="return confirm('Play today’s sound out loud at {{ d.name }} now?');">
+        {{ csrf_input(request) }}
+        <button class="btn btn--sm" type="submit"
+                title="Plays today's active sound through the door station's speaker — this is audible at the door">
+          {{ icon("play", 14) }}Play chime
+        </button>
+      </form>
+      <form class="inline-form" method="post" action="/devices/{{ d.id }}/apply">
+        {{ csrf_input(request) }}
+        <button class="btn btn--sm" type="submit">{{ icon("refresh", 14) }}Apply now</button>
+      </form>
+      <span class="push"></span>
+      <form class="inline-form" method="post" action="/devices/{{ d.id }}/delete"
+            onsubmit="return confirm('Delete {{ d.name }}?');">
+        {{ csrf_input(request) }}
+        <button class="btn btn--sm btn--danger" type="submit">{{ icon("trash", 14) }}Delete</button>
+      </form>
+    </div>
+  </section>
+  {% else %}
+  <section class="card">
+    <div class="empty">
+      {{ ringmark(96, "idle", "station") }}
+      <h2>No door stations yet</h2>
+      <p>
+        Add the DoorBird's LAN address and a user with API operator permission.
+        Nothing is configured on the device itself — this app only listens.
+      </p>
+      <a class="btn btn--primary" href="#add-device">{{ icon("plus", 16) }}Add a DoorBird</a>
+    </div>
+  </section>
+  {% endfor %}
+
+  <section class="card" id="add-device">
+    <div class="card-head">
+      <span class="card-title">{{ icon("plus", 16) }}Add a DoorBird</span>
+      <span class="card-count">must be reachable on this LAN</span>
+    </div>
+    <div class="card-body">
+      <form method="post" action="/devices/create" class="stack">
+        {{ csrf_input(request) }}
+        <div class="row" style="gap:12px">
+          <div class="field col">
+            <label for="new_dev_name">Friendly name</label>
+            <input id="new_dev_name" name="name" placeholder="Front door" required>
+          </div>
+          <div class="field col">
+            <label for="new_dev_host">Host</label>
+            <input id="new_dev_host" name="host" placeholder="LAN IP, e.g. 192.168.1.50" required>
+          </div>
+          <div class="field col">
+            <label for="new_dev_user">Username</label>
+            <input id="new_dev_user" name="username" placeholder="e.g. abcdef0001" required>
+          </div>
+          <div class="field col">
+            <label for="new_dev_pw">Password</label>
+            <input id="new_dev_pw" type="password" name="password" required>
+          </div>
+        </div>
+        <div class="inline" style="gap:28px">
+          <label class="switch">
+            <input type="checkbox" name="use_https" value="true" id="use_https_new">
+            <span class="track"></span>
+            <span class="switch-label">HTTPS</span>
+            <span class="state"><span class="on">On</span><span class="off">Off</span></span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" name="verify_tls" value="true" id="verify_tls_new">
+            <span class="track"></span>
+            <span class="switch-label">Verify certificate</span>
+            <span class="state"><span class="on">On</span><span class="off">Off</span></span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" name="enabled" value="true" id="enabled_new" checked>
+            <span class="track"></span>
+            <span class="switch-label">Enable</span>
+            <span class="state"><span class="on">On</span><span class="off">Off</span></span>
+          </label>
+          <span class="push"></span>
+          <button class="btn btn--primary" type="submit">{{ icon("plus", 16) }}Add device</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+</div>
+{% endblock %}
