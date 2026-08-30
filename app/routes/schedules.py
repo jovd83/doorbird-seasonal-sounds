@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
+from app import holidays
 from app.db import get_db, session_scope
 from app.models import (
     KIND_AUTO_RESPONSE,
@@ -26,6 +27,7 @@ from app.schedule_form import (
     MAX_DELAY_SECONDS,
     FormError,
     build_date_fields,
+    build_day_rule,
     build_time_window,
     clean_delay,
     optional_int,
@@ -174,6 +176,12 @@ def _make_router(*, kind: str, prefix: str, page: dict) -> APIRouter:
                 "collections": collections,
                 "devices": devices,
                 "today": date.today(),
+                "holiday_groups": holidays.grouped(),
+                "holiday_total": len(holidays.HOLIDAYS),
+                "day_presets": holidays.DAY_PRESETS,
+                "weekday_labels": holidays.WEEKDAY_LABELS,
+                "weekday_names": holidays.WEEKDAY_NAMES,
+                "all_days_mask": holidays.ALL_DAYS,
                 "kind": kind,
                 "base_url": prefix,
                 "max_delay": MAX_DELAY_SECONDS,
@@ -200,11 +208,19 @@ def _make_router(*, kind: str, prefix: str, page: dict) -> APIRouter:
         end_time: str = Form(""),
         delay_seconds: int = Form(0),
         device_ids: list[int] = Form(default=[]),
+        weekdays: list[str] = Form(default=[]),
+        holiday_keys: list[str] = Form(default=[]),
+        skip_public_holidays: bool = Form(False),
+        day_rule: bool = Form(False),
     ):
         fields = _validated(build_date_fields, start=start, end=end, recurring=recurring)
         fields |= _validated(
             build_time_window, all_day=all_day,
             start_time=start_time, end_time=end_time).as_fields()
+        days = _validated(
+            build_day_rule, weekdays=weekdays, holiday_keys=holiday_keys,
+            skip_public_holidays=skip_public_holidays, present=day_rule)
+        fields |= days.as_fields()
         with session_scope() as db:
             if db.query(Schedule).filter(Schedule.name == name).first():
                 raise HTTPException(400, f"Schedule {name!r} already exists")
@@ -226,6 +242,7 @@ def _make_router(*, kind: str, prefix: str, page: dict) -> APIRouter:
                 **fields,
             )
             schedule.devices = _resolve_devices(db, device_ids)
+            schedule.set_holiday_keys(days.holiday_keys)
             db.add(schedule)
         trigger_on_change()
         return RedirectResponse(prefix, status_code=303)
@@ -248,11 +265,19 @@ def _make_router(*, kind: str, prefix: str, page: dict) -> APIRouter:
         end_time: str = Form(""),
         delay_seconds: int = Form(0),
         device_ids: list[int] = Form(default=[]),
+        weekdays: list[str] = Form(default=[]),
+        holiday_keys: list[str] = Form(default=[]),
+        skip_public_holidays: bool = Form(False),
+        day_rule: bool = Form(False),
     ):
         fields = _validated(build_date_fields, start=start, end=end, recurring=recurring)
         fields |= _validated(
             build_time_window, all_day=all_day,
             start_time=start_time, end_time=end_time).as_fields()
+        days = _validated(
+            build_day_rule, weekdays=weekdays, holiday_keys=holiday_keys,
+            skip_public_holidays=skip_public_holidays, present=day_rule)
+        fields |= days.as_fields()
         with session_scope() as db:
             s = db.get(Schedule, schedule_id)
             if not s or s.kind != kind:
@@ -271,6 +296,7 @@ def _make_router(*, kind: str, prefix: str, page: dict) -> APIRouter:
             s.delay_seconds = _validated(clean_delay, kind, delay_seconds,
                                          auto_response_kind=KIND_AUTO_RESPONSE)
             s.devices = _resolve_devices(db, device_ids)
+            s.set_holiday_keys(days.holiday_keys)
             for k, v in fields.items():
                 setattr(s, k, v)
         trigger_on_change()

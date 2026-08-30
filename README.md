@@ -1,7 +1,7 @@
 # DoorBird Seasonal Sounds
 
 [![CI](https://github.com/jovd83/doorbird-seasonal-sounds/actions/workflows/ci.yml/badge.svg)](https://github.com/jovd83/doorbird-seasonal-sounds/actions/workflows/ci.yml)
-[![version](https://img.shields.io/badge/version-0.1.0-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.2.0-blue)](CHANGELOG.md)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/jovd83)
@@ -68,6 +68,20 @@ flowchart LR
   plays on every ring, never the same one twice running.
 - **Time-of-day windows** — optional `HH:MM` from/to per schedule, "all day" by
   default. Windows may wrap midnight (`22:00 → 02:00`).
+- **Days of the week** — per-schedule weekday toggles with Mo–Fr / Sa–Su
+  presets, editable straight from the schedule row.
+- **Belgian holidays** — pick from the ten federal public holidays, three
+  community days and six observances. A ticked holiday fires whatever weekday
+  it lands on, and one switch expresses "Mo–Fr, but not on a public holiday".
+  The five dates that move with Easter are computed once and stored a century
+  ahead, so a ring never runs a date algorithm.
+- **Days of the week** — per-schedule weekday toggles with Mo–Fr / Sa–Su
+  presets, editable straight from the schedule row.
+- **Belgian holidays** — pick from the ten federal public holidays, three
+  community days and six observances. A ticked holiday fires whatever weekday
+  it lands on, and one switch expresses "Mo–Fr, but not on a public holiday".
+  The five dates that move with Easter are computed once and stored a century
+  ahead, so a ring never runs a date algorithm.
 - **Per-device targeting** — a schedule can apply to selected door stations, or
   to all of them.
 - **Priority and specificity** — highest priority wins; ties go to the more

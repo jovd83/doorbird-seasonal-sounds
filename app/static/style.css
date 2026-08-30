@@ -528,8 +528,8 @@ table.tbl .nowrap { white-space: nowrap; }
 
 /* Inline-edit tables carry real form controls, so they get a floor width and
    scroll inside .tbl-wrap rather than crushing every input. */
-table.tbl--form { min-width: 1360px; }
-table.tbl--form.has-wait { min-width: 1480px; }
+table.tbl--form { min-width: 1690px; }
+table.tbl--form.has-wait { min-width: 1810px; }
 table.tbl--form td { padding-top: 12px; padding-bottom: 12px; vertical-align: top; }
 table.tbl--form select[multiple] { min-height: 84px; }
 
@@ -722,6 +722,118 @@ audio {
 .error-card { width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 18px; }
 .error-head { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .error-head h1 { font-size: 22px; }
+
+/* ------------------------------------------------- days and holidays */
+/* A day-of-week toggle is a checkbox wearing a chip. The input stays in the
+   form (and in the tab order); the span beside it is what you see. Seven of
+   them in a row is narrower and far quicker to read than a multi-select. */
+.daystrip { display: flex; gap: 8px; flex-wrap: wrap; }
+.daystrip--sm { gap: 4px; }
+
+.daypick { position: relative; display: inline-flex; cursor: pointer; }
+.daypick input { position: absolute; opacity: 0; width: 0; height: 0; }
+.daypick .day {
+  display: flex; align-items: center; justify-content: center;
+  width: 46px; height: 40px; flex: none;
+  border-radius: 10px; border: 1px solid var(--line); background: var(--raised);
+  color: var(--muted); font-size: 12.5px; font-weight: 700;
+  transition: border-color .12s ease, background .12s ease, color .12s ease;
+}
+.daypick:hover .day { color: var(--text2); }
+.daypick input:checked + .day {
+  border-color: var(--accent-line); background: var(--accent-wash); color: var(--text);
+}
+.daypick input:focus-visible + .day { outline: 2px solid var(--accent); outline-offset: 2px; }
+.daypick input:disabled + .day { opacity: 0.45; cursor: not-allowed; }
+.daystrip--sm .day { width: 34px; height: 30px; font-size: 11px; border-radius: 8px; }
+
+/* Preset buttons sit above the strip and only tick boxes -- they are not a
+   stored mode, so nothing has to stay "in" a preset once a day is changed. */
+.day-presets { display: flex; gap: 8px; flex-wrap: wrap; }
+.day-preset {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 30px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--line); background: transparent;
+  color: var(--muted); font-family: inherit; font-size: 12.5px; font-weight: 600;
+  white-space: nowrap; cursor: pointer;
+}
+.day-preset:hover { background: var(--raised); color: var(--text); }
+.day-preset.is-on { background: var(--raised); border-color: var(--accent-line); color: var(--text); }
+
+/* Nineteen holidays will not fit a table cell, so the row carries a summary
+   that opens in place. Deliberately in the flow rather than an absolutely
+   positioned popover: .card has overflow:hidden and .tbl-wrap scrolls, so an
+   overlay would be clipped by both. */
+.holpick { min-width: 0; }
+.holpick > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  height: 34px; padding: 0 10px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--raised);
+  color: var(--text); font-size: 12.5px; font-weight: 500;
+  cursor: pointer; list-style: none; white-space: nowrap;
+}
+.holpick > summary::-webkit-details-marker { display: none; }
+.holpick > summary:hover { border-color: var(--faint); }
+.holpick > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.holpick[open] > summary { border-color: var(--accent-line); }
+.holpick > summary .ic { color: var(--muted); transition: transform .15s ease; }
+.holpick[open] > summary .ic { transform: rotate(180deg); }
+.holpick-none { color: var(--faint); }
+.divider-soft { height: 1px; background: var(--line-soft); }
+/* A switch with nothing to act on -- no weekday ticked, so no day for
+   'skip public holidays' to remove. Dimmed rather than hidden: it has to
+   stay visible to explain why it cannot be used. */
+.switch.is-muted { opacity: 0.5; cursor: not-allowed; }
+
+.holpick-panel {
+  margin-top: 8px; padding: 12px;
+  max-height: 300px; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--sunk);
+  display: flex; flex-direction: column; gap: 12px;
+}
+
+/* Group header: label, a count, a rule to the edge, and the two bulk links. */
+.hol-group { display: flex; flex-direction: column; gap: 9px; }
+.hol-head { display: flex; align-items: center; gap: 9px; }
+.hol-head .rule { flex: 1; height: 1px; background: var(--line-soft); }
+.hol-bulk {
+  border: 0; background: none; padding: 0; cursor: pointer; font-family: inherit;
+  font-size: 11px; font-weight: 600; color: var(--muted);
+}
+.hol-bulk:hover { color: var(--accent); text-decoration: underline; }
+.hol-bulk-sep { color: var(--faint); font-size: 11px; }
+
+.holgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px 18px; }
+.holgrid--narrow { grid-template-columns: minmax(0, 1fr); }
+
+.hol { display: flex; align-items: center; gap: 9px; min-width: 0; cursor: pointer; }
+.hol input { position: absolute; opacity: 0; width: 0; height: 0; }
+.hol .box {
+  width: 18px; height: 18px; flex: none; border-radius: 6px;
+  border: 1.5px solid var(--line); background: var(--raised);
+  display: flex; align-items: center; justify-content: center; color: transparent;
+}
+.hol input:checked + .box { border-color: var(--accent); background: var(--accent-wash); color: var(--accent); }
+.hol input:focus-visible + .box { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hol-name {
+  font-size: 12.5px; color: var(--text2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hol input:checked ~ .hol-name { color: var(--text); font-weight: 600; }
+.hol-when {
+  margin-left: auto; flex: none; display: flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.hol-when .ic { color: var(--warn); }
+
+/* Compact day readout for the dashboard and anywhere a rule is described
+   rather than edited. */
+.daydots { display: inline-flex; gap: 3px; vertical-align: middle; }
+.daydots .pip {
+  width: 9px; height: 14px; border-radius: 3px;
+  background: var(--raised); border: 1px solid var(--line);
+}
+.daydots .pip.is-on { background: var(--accent); border-color: var(--accent); }
 
 @media print {
   .sidebar, .mobile-bar, .mobile-head, .topbar-actions, .more-sheet { display: none !important; }

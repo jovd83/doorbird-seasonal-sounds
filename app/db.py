@@ -98,6 +98,15 @@ def init_db() -> None:
 
     upgrade_to_head(engine, legacy_bridge=_run_legacy_migrations)
 
+    # The moveable holidays are materialised after the schema is current, not
+    # inside a migration: the horizon is relative to today, so it has to roll
+    # forward on every boot rather than being frozen at whichever year the
+    # upgrade happened to run.
+    from app.holiday_store import ensure_horizon
+
+    with session_scope() as db:
+        ensure_horizon(db)
+
 
 def _run_legacy_migrations() -> None:
     """The pre-Alembic ladder, kept only to bridge existing databases.

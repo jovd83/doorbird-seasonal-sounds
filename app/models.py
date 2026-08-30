@@ -1,8 +1,9 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import (
     Boolean,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
@@ -13,6 +14,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app import holidays
 from app.db import Base
 from app.timezone import now_local
 
@@ -147,6 +149,16 @@ class Schedule(Base):
     # Auto responses only: how long to wait after the chime has finished
     # before the message is spoken. Ignored by chime schedules.
     delay_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    # Which weekdays the schedule may fire on, as a bitmask -- bit 0 is Monday.
+    # 127 is every day, which is what every schedule written before this column
+    # existed is migrated to, so the upgrade changes nothing about when a
+    # doorbell sounds.
+    weekday_mask: Mapped[int] = mapped_column(
+        Integer, default=holidays.ALL_DAYS, server_default=str(holidays.ALL_DAYS))
+    # Drops a day that matched only by its weekday when it is one of the ten
+    # federal public holidays. Never touches a holiday ticked explicitly.
+    skip_public_holidays: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_local)
 
     mp3: Mapped["Mp3File"] = relationship()
@@ -154,6 +166,63 @@ class Schedule(Base):
     devices: Mapped[list["Device"]] = relationship(
         secondary=schedule_devices, lazy="selectin"
     )
+    holiday_rows: Mapped[list["ScheduleHoliday"]] = relationship(
+        cascade="all, delete-orphan", lazy="selectin"
+    )
+
+    @property
+    def holiday_keys(self) -> frozenset[str]:
+        """The holidays this schedule fires on regardless of weekday."""
+        return frozenset(r.holiday_key for r in self.holiday_rows)
+
+    def set_holiday_keys(self, keys) -> None:
+        """Replace the selection, dropping anything not in the catalogue.
+
+        Unknown keys are discarded rather than raising: the catalogue is code,
+        so a key can only go missing when a holiday is removed from it in an
+        upgrade, and a schedule that outlives one entry should keep working
+        with the rest of its selection intact.
+
+        The collection is edited in place rather than reassigned. Handing the
+        relationship a fresh list of equivalent rows makes SQLAlchemy delete
+        and re-insert every key on every save, and within a single flush the
+        INSERT can be ordered ahead of the DELETE — which the composite primary
+        key then rejects. Rows that are staying simply stay.
+        """
+        wanted = {k for k in keys if k in holidays.VALID_KEYS}
+        current = {row.holiday_key: row for row in self.holiday_rows}
+
+        for key, row in current.items():
+            if key not in wanted:
+                self.holiday_rows.remove(row)
+        for key in sorted(wanted - set(current)):
+            self.holiday_rows.append(ScheduleHoliday(holiday_key=key))
+
+    @property
+    def holiday_names(self) -> list[str]:
+        return holidays.names(self.holiday_keys)
+
+    @property
+    def days_label(self) -> str:
+        return holidays.describe_days(self.weekday_mask)
+
+    def day_on(self, weekday: int) -> bool:
+        """Template helper: is this weekday ticked? Monday is 0."""
+        return holidays.day_selected(self.weekday_mask, weekday)
+
+    @property
+    def holiday_summary(self) -> str:
+        """What the row's collapsed holiday control says.
+
+        Names the holiday outright when there is only one -- 'Christmas Day'
+        reads, '1 holiday' does not -- and mentions the skip only when it is
+        actually doing something.
+        """
+        chosen = self.holiday_names
+        if not chosen:
+            return "None · skipping holidays" if self.skip_public_holidays else "No holidays"
+        label = chosen[0] if len(chosen) == 1 else f"{len(chosen)} holidays"
+        return f"{label} · skipping" if self.skip_public_holidays else label
 
     @property
     def all_day(self) -> bool:
@@ -175,6 +244,36 @@ class Schedule(Base):
         if not self.devices or device_id is None:
             return True
         return any(d.id == device_id for d in self.devices)
+
+
+class ScheduleHoliday(Base):
+    """One holiday a schedule fires on, whatever weekday it lands on.
+
+    The key is a catalogue constant from `app.holidays`, not a foreign key:
+    the nineteen entries are code, not data, so there is no table for them to
+    point at and nothing for a user to add or rename.
+    """
+
+    __tablename__ = "schedule_holidays"
+
+    schedule_id: Mapped[int] = mapped_column(
+        ForeignKey("schedules.id", ondelete="CASCADE"), primary_key=True)
+    holiday_key: Mapped[str] = mapped_column(String(40), primary_key=True)
+
+
+class HolidayDate(Base):
+    """A materialised date for a holiday that moves with Easter.
+
+    Fixed holidays are absent by design -- 25 December needs no row. The five
+    that move are written out a century ahead by `app.holiday_store` so the
+    reference page can show real dates and nothing has to run a date algorithm
+    to answer a question about next year.
+    """
+
+    __tablename__ = "holiday_dates"
+
+    holiday_key: Mapped[str] = mapped_column(String(40), primary_key=True)
+    on_date: Mapped[date] = mapped_column(Date, primary_key=True, index=True)
 
 
 class AppSetting(Base):

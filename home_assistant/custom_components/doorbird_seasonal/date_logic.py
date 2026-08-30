@@ -9,14 +9,25 @@ one way in the app and another way on the HA sensor, with nothing to say which
 was right. `tests/test_ha_date_logic.py` now runs both implementations over the
 same fixtures and fails if their answers diverge.
 
+`holidays.py` beside this file is a *byte-identical* copy of the app's
+`app/holidays.py` -- the catalogue and the Easter arithmetic travel with these
+rules, because a weekday mask is no use without knowing which day is a holiday.
+A test asserts the two files are the same bytes, so update it by copying, never
+by editing this one.
+
 Keep the two in step. The tie-break order in particular is load-bearing:
-highest priority, then the narrowest time window, then the narrowest date
-range, then a stable key.
+highest priority, then the narrowest time window, then the fewest weekdays,
+then the narrowest date range, then a stable key.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
+
+try:  # inside Home Assistant this file is one module of a package
+    from . import holidays
+except ImportError:  # loaded on its own by the agreement test
+    import holidays
 
 MINUTES_PER_DAY = 24 * 60
 
@@ -37,6 +48,11 @@ class Schedule:
     start_minute: int | None = None
     end_minute: int | None = None
     enabled: bool = True
+    # Which weekdays the schedule may fire on; bit 0 is Monday. 127 is every
+    # day, which is what a schedule with no day rule of its own means.
+    weekday_mask: int = holidays.ALL_DAYS
+    skip_public_holidays: bool = False
+    holiday_keys: frozenset[str] = field(default_factory=frozenset)
 
     @property
     def all_day(self) -> bool:
@@ -100,13 +116,37 @@ def matches_time(s: Schedule, minute_of_day: int) -> bool:
     return minute_of_day >= start or minute_of_day <= end
 
 
+def matches_day(s: Schedule, today: date) -> bool:
+    """Does the schedule's weekday / holiday rule cover this day?
+
+    A day matches when it is a ticked weekday **or** a ticked holiday. The two
+    are a union rather than an intersection on purpose: "Mo–Fr, and Christmas
+    whenever it falls" is the common case, and intersecting them would make it
+    impossible to say without ticking all seven days.
+
+    `skip_public_holidays` is the one subtraction, and it only ever removes a
+    day that matched by weekday. A holiday ticked explicitly always wins --
+    otherwise a schedule could name Christmas Day and skip it in the same
+    breath.
+    """
+    on_this_day = holidays.keys_on(today)
+    if s.holiday_keys & on_this_day:
+        return True
+    if not holidays.day_selected(s.weekday_mask, today.weekday()):
+        return False
+    skipped = s.skip_public_holidays and bool(on_this_day & holidays.PUBLIC_KEYS)
+    return not skipped
+
+
 def matches_today(s: Schedule, today: date) -> bool:
     """Date-only match, kept for callers that only care about the day."""
-    return matches_date(s, today)
+    return matches_date(s, today) and matches_day(s, today)
 
 
 def matches_now(s: Schedule, when: datetime) -> bool:
-    return matches_date(s, when.date()) and matches_time(s, when.hour * 60 + when.minute)
+    day = when.date()
+    return (matches_date(s, day) and matches_day(s, day)
+            and matches_time(s, when.hour * 60 + when.minute))
 
 
 def _window_span_days(s: Schedule) -> int:
@@ -126,6 +166,16 @@ def _window_span_days(s: Schedule) -> int:
     return (12 * 31) - start_ord + end_ord
 
 
+def _day_span(s: Schedule) -> int:
+    """How many weekdays the rule covers; fewer is more specific.
+
+    A holidays-only schedule scores 0 and therefore beats every weekday rule at
+    the same priority, which is what you want: naming Christmas Day is a more
+    deliberate statement than ticking Monday.
+    """
+    return holidays.day_count(s.weekday_mask)
+
+
 def _window_span_minutes(s: Schedule) -> int:
     """How much of the day the schedule covers; narrower wins a priority tie."""
     if s.start_minute is None and s.end_minute is None:
@@ -143,10 +193,43 @@ def _fmt_minute(value: int | None) -> str:
     return f"{value // 60:02d}:{value % 60:02d}"
 
 
+def describe_days(schedule: Schedule) -> str:
+    """'Mo–Fr, not on public holidays, plus Christmas Day' — the day rule in words.
+
+    Empty for a schedule that runs every day with no holiday rule, so the
+    common case adds nothing to a reason string.
+    """
+    mask = holidays.effective_mask(schedule.weekday_mask)
+    picked = schedule.holiday_keys or frozenset()
+    named = holidays.names(picked)
+
+    # No weekday at all: the holidays *are* the rule, so name them and stop.
+    if mask == holidays.NO_DAYS and named:
+        return ", ".join(named)
+
+    subtracts = bool(schedule.skip_public_holidays and mask)
+    tail: list[str] = []
+    if subtracts:
+        tail.append("not on public holidays")
+    # With every day ticked and nothing subtracted, a ticked holiday changes
+    # nothing -- saying "plus Christmas Day" would imply otherwise.
+    if named and (mask != holidays.ALL_DAYS or subtracts):
+        tail.append("plus " + ", ".join(named))
+
+    parts: list[str] = []
+    if mask != holidays.ALL_DAYS or tail:
+        parts.append(holidays.describe_days(mask))
+    parts.extend(tail)
+    return ", ".join(parts)
+
+
 def describe(schedule: Schedule) -> str:
     detail = f"schedule '{schedule.name}' (priority {schedule.priority})"
     if not schedule.all_day:
         detail += f" {_fmt_minute(schedule.start_minute)}–{_fmt_minute(schedule.end_minute)}"
+    days = describe_days(schedule)
+    if days:
+        detail += f" [{days}]"
     return detail
 
 
@@ -154,10 +237,10 @@ def pick_schedule(schedules: list[Schedule], when: date | datetime) -> Schedule 
     """The single schedule that wins at this moment, or None if none match.
 
     Ties break by highest priority, then the most specific window — narrowest
-    time range first, then narrowest date range — and finally by name so the
-    result is stable. The app orders that last key by row id; name is the
-    closest stable equivalent here, and the agreement test only uses fixtures
-    where the earlier keys already decide.
+    time range first, then fewest weekdays, then narrowest date range — and
+    finally by name so the result is stable. The app orders that last key by
+    row id; name is the closest stable equivalent here, and the agreement test
+    only uses fixtures where the earlier keys already decide.
     """
     moment = when if isinstance(when, datetime) else datetime.combine(when, datetime.min.time())
     day = moment.date()
@@ -165,13 +248,14 @@ def pick_schedule(schedules: list[Schedule], when: date | datetime) -> Schedule 
 
     candidates = [
         s for s in schedules
-        if matches_date(s, day) and matches_time(s, minute)
+        if matches_date(s, day) and matches_day(s, day) and matches_time(s, minute)
     ]
     if not candidates:
         return None
 
     candidates.sort(
-        key=lambda s: (-s.priority, _window_span_minutes(s), _window_span_days(s), s.name)
+        key=lambda s: (-s.priority, _window_span_minutes(s), _day_span(s),
+                       _window_span_days(s), s.name)
     )
     return candidates[0]
 

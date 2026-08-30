@@ -20,6 +20,11 @@ class _Stub:
         self.start_minute = kw.get("start_minute")
         self.end_minute = kw.get("end_minute")
         self.devices = kw.get("devices", [])
+        # Every day, no holiday rule -- the shape of a schedule written before
+        # those existed, and what the migration gives every one of them.
+        self.weekday_mask = kw.get("weekday_mask", 0b1111111)
+        self.skip_public_holidays = kw.get("skip_public_holidays", False)
+        self.holiday_keys = frozenset(kw.get("holiday_keys", ()))
 
     @property
     def all_day(self) -> bool:

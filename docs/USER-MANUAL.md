@@ -9,6 +9,7 @@ Day-to-day use of DoorBird Seasonal Sounds. For installation see the
 - [Devices](#devices)
 - [MP3 library](#mp3-library)
 - [Collections](#collections)
+- [Holidays](#holidays)
 - [Chime schedules](#chime-schedules)
 - [Auto responses](#auto-responses)
 - [What plays right now](#what-plays-right-now)
@@ -58,6 +59,7 @@ both render from the same list, so nothing can be missing from one of them.
 | **Auto responses** | Spoken messages that follow the chime |
 | **MP3s** | The sound library, and each file's type |
 | **Collections** | Bags of interchangeable sounds |
+| **Holidays** | The Belgian holidays a schedule can pick from, and their dates |
 | **Audit** | Every attempt this app has made |
 | **Settings** | Trigger mode, webhook, off-season behaviour, appearance |
 
@@ -224,6 +226,39 @@ delivery message.
 
 ---
 
+## Holidays
+
+A read-only reference: the nineteen Belgian holidays a schedule can pick from,
+grouped, each with the rule it follows, the date it **next** falls on, and which
+schedules currently use it.
+
+There is nothing to edit here. The catalogue is fixed, and the page exists to
+answer the one question the picker cannot: *when is that, exactly?*
+
+### Why five of them are stored
+
+Fourteen entries are a fixed date — 25 December is 25 December, and that is the
+whole rule. The other five move with Easter:
+
+| Holiday | Rule |
+|---|---|
+| Easter Sunday | Easter |
+| Easter Monday | Easter + 1 day |
+| Ascension Day | Easter + 39 days |
+| Whit Sunday | Easter + 49 days |
+| Whit Monday | Easter + 50 days |
+
+Their dates are worked out once, on first start, and written to the database —
+one row per holiday per year for **a hundred years ahead**, 500 rows in all. So
+answering "is today a holiday?" when the doorbell rings is a lookup rather than
+a calculation on the thread that should be pushing audio at the door station.
+
+The horizon rolls forward on its own. Every start tops the table up, so a full
+century is always ahead of you; nothing is ever deleted, so past years stay
+readable too.
+
+---
+
 ## Chime schedules
 
 ![Chime schedules](../screenshots/chime-schedules.png)
@@ -256,6 +291,54 @@ absence of a fallback differ.
 - `22:00 → 02:00` — a start later than the end **wraps past midnight**.
 
 Both ends are inclusive.
+
+### Days and holidays
+
+By default a schedule runs on **every day** inside its date range. This panel
+narrows that down.
+
+**Days of the week.** Seven toggles, plus four presets that just tick boxes for
+you — *Every day*, *Weekdays · Mo–Fr*, *Weekend · Sa–Su*, *None*. There is no
+mode to be "in": change any single day afterwards and the schedule keeps
+working, the preset simply stops being highlighted.
+
+**Belgian holidays.** Nineteen entries in three groups — the ten federal public
+holidays, three community days, and six observances (Sinterklaas, Halloween,
+Valentine's Day and so on). Tick the ones this schedule should fire on. The
+full list, with the date each one next falls on, is on the
+[Holidays](#holidays) page.
+
+**The rule is a union.** A day matches when it is a ticked weekday **or** a
+ticked holiday:
+
+| Days | Holidays | Fires on |
+|---|---|---|
+| Mo–Fr | — | Monday to Friday, whatever the date |
+| Mo–Fr | Christmas Day | Monday to Friday, **and** Christmas — even when it falls on a Sunday |
+| none | Christmas Day, Sinterklaas | only those two days, whatever weekday they land on |
+
+That is the whole point of the union: "Mo–Fr plus Christmas" is what people
+actually want, and an intersection could not express it without ticking all
+seven days.
+
+**Skip public holidays.** The one subtraction, and the way to say *"Mo–Fr, but
+not on a public holiday"*. With it on, a day that matched **only because of its
+weekday** is dropped when it is one of the ten federal public holidays.
+
+Two things it deliberately does not do:
+
+- It never drops a holiday you ticked yourself. Naming Christmas Day and
+  skipping it in the same breath is not a rule, it is a contradiction, so the
+  explicit tick wins.
+- It only looks at the ten **public** holidays. Community days and observances
+  never subtract anything — they only ever add a day when ticked.
+
+With no weekday ticked at all there is nothing for it to subtract from, so the
+switch is disabled rather than quietly ignored.
+
+**A schedule needs at least one day or one holiday.** Ticking neither would
+create something that can never play, which is almost always a half-finished
+edit — use the **Enabled** switch to silence a schedule instead.
 
 ### Apply to
 

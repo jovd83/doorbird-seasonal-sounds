@@ -1,7 +1,7 @@
 {
   "domain": "doorbird_seasonal",
   "name": "DoorBird Seasonal Sounds",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "documentation": "https://github.com/jovd83/doorbird-seasonal",
   "issue_tracker": "https://github.com/jovd83/doorbird-seasonal/issues",
   "codeowners": ["@jovd83"],

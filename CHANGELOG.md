@@ -4,11 +4,48 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] — Unreleased
+## [0.2.0] — 2026-08-30
 
 ### Added
 
+- **Day-of-week rules on a schedule.** Seven weekday toggles with Mo–Fr,
+  Sa–Su and every-day presets, editable inline in the schedule row alongside
+  every other control on it.
+- **Belgian holidays.** Nineteen entries in three groups — the ten federal
+  public holidays, three community days, six observances. A day matches when it
+  is a ticked weekday *or* a ticked holiday, so "Mo–Fr plus Christmas" fires on
+  Christmas even when it falls on a Sunday.
+- **A "skip public holidays" switch**, the one subtraction in the rule: it
+  drops a day that matched only by its weekday when it is one of the ten public
+  holidays. It never drops a holiday that was ticked explicitly, and it is
+  disabled when no weekday is ticked for it to act on.
+- **A Holidays page** listing the catalogue, each entry's rule, the date it next
+  falls on, and the schedules using it.
+- **A stored century of moveable dates.** The five holidays that move with
+  Easter are computed once and written to `holiday_dates` — 500 rows, a hundred
+  years ahead — so resolving a ring is a lookup rather than a calculation. The
+  horizon is topped up at every start, and nothing is ever deleted.
+
 ### Changed
+
+- **Migration `0003_days_holidays` runs on the first start after upgrading.**
+  It adds two columns to `schedules`, creates `schedule_holidays` and
+  `holiday_dates`, and the store fills on the same boot. Existing schedules are
+  set to every day with no holidays — exactly what they did before — so the
+  upgrade changes nothing about when a doorbell sounds. Take a copy of
+  `doorbird.db` first, as with any schema change.
+- **The manual now says when an auto response actually reaches the speaker.**
+  The wait interval is counted from the end of the chime rather than the button
+  press, and the door station stops playing transmitted audio once the ring
+  session closes — which is why a message can be logged `OK` and never heard.
+- **Specificity tie-breaking now considers the day rule.** The order is
+  priority, then the narrowest time window, then the fewest weekdays, then the
+  narrowest date range. Every schedule that predates this covers all seven days
+  and so scores identically, which is why nothing that already existed is
+  reordered.
+- The Home Assistant component's vendored `date_logic` learned the same rule,
+  and now carries a byte-identical copy of `app/holidays.py`. A test fails if
+  the two files drift apart.
 
 ### Fixed
 

@@ -21,6 +21,7 @@ from app.models import (
     Mp3Collection,
     Mp3File,
     Schedule,
+    ScheduleHoliday,
     collection_mp3s,
     schedule_devices,
 )
@@ -54,6 +55,7 @@ def _clean_slate():
     with session_scope() as db:
         db.execute(delete(schedule_devices))
         db.execute(delete(collection_mp3s))
+        db.query(ScheduleHoliday).delete()
         db.query(Schedule).delete()
         db.query(Mp3Collection).delete()
         db.query(Mp3File).delete()
@@ -376,3 +378,118 @@ def test_no_page_loads_an_external_stylesheet(client):
         body = client.get(path).text
         assert "cdn.jsdelivr.net" not in body, path
         assert "fonts.googleapis.com" not in body, path
+
+
+# ------------------------------------------------- days and holidays, end to end
+
+
+def test_a_schedule_can_be_given_weekdays_and_holidays(client):
+    mp3_id = _upload(client, "weekday-bell")
+    r = client.post("/schedules/create", data={
+        "name": "office-hours", "start": "2026-01-01", "end": "2026-12-31",
+        "recurring": "true", "mp3_id": str(mp3_id), "all_day": "true",
+        "day_rule": "1",
+        "weekdays": ["0", "1", "2", "3", "4"],
+        "holiday_keys": ["christmas", "sinterklaas"],
+    }, follow_redirects=False)
+    assert r.status_code == 303, r.text
+    with session_scope() as db:
+        s = db.query(Schedule).filter(Schedule.name == "office-hours").one()
+        assert s.weekday_mask == 0b0011111
+        assert s.holiday_keys == {"christmas", "sinterklaas"}
+        assert s.skip_public_holidays is False
+        assert s.days_label == "Mo–Fr"
+
+
+def test_the_skip_toggle_survives_a_round_trip(client):
+    mp3_id = _upload(client, "workday-bell")
+    r = client.post("/schedules/create", data={
+        "name": "workdays", "start": "2026-01-01", "end": "2026-12-31",
+        "recurring": "true", "mp3_id": str(mp3_id), "all_day": "true",
+        "day_rule": "1", "weekdays": ["0", "1", "2", "3", "4"],
+        "skip_public_holidays": "true",
+    }, follow_redirects=False)
+    assert r.status_code == 303, r.text
+    with session_scope() as db:
+        s = db.query(Schedule).filter(Schedule.name == "workdays").one()
+        assert s.skip_public_holidays is True
+        assert s.holiday_keys == frozenset()
+
+
+def test_editing_a_schedule_can_clear_every_holiday(client):
+    """delete-orphan on the association, so unticking really removes rows."""
+    mp3_id = _upload(client, "clearable")
+    client.post("/schedules/create", data={
+        "name": "clearme", "start": "2026-01-01", "end": "2026-12-31",
+        "recurring": "true", "mp3_id": str(mp3_id), "all_day": "true",
+        "day_rule": "1", "weekdays": ["0"], "holiday_keys": ["christmas"],
+    }, follow_redirects=False)
+    with session_scope() as db:
+        sched = db.query(Schedule).filter(Schedule.name == "clearme").one()
+        assert sched.holiday_keys == {"christmas"}
+        schedule_id = sched.id
+
+    r = client.post(f"/schedules/{schedule_id}/update", data={
+        "name": "clearme", "start": "2026-01-01", "end": "2026-12-31",
+        "recurring": "true", "mp3_id": str(mp3_id), "all_day": "true",
+        "day_rule": "1", "weekdays": ["0", "1"],
+    }, follow_redirects=False)
+    assert r.status_code == 303, r.text
+    with session_scope() as db:
+        s = db.get(Schedule, schedule_id)
+        assert s.holiday_keys == frozenset()
+        assert s.weekday_mask == 0b0000011
+
+
+def test_a_schedule_with_no_day_and_no_holiday_is_refused(client):
+    mp3_id = _upload(client, "impossible")
+    r = client.post("/schedules/create", data={
+        "name": "never", "start": "2026-01-01", "end": "2026-12-31",
+        "recurring": "true", "mp3_id": str(mp3_id), "all_day": "true",
+        "day_rule": "1",
+    }, follow_redirects=False)
+    assert r.status_code == 400
+    with session_scope() as db:
+        assert db.query(Schedule).filter(Schedule.name == "never").first() is None
+
+
+def test_a_client_that_sends_no_day_fields_still_gets_every_day(client):
+    """The pre-feature request shape must keep working unchanged."""
+    mp3_id = _upload(client, "legacy-bell")
+    r = client.post("/schedules/create", data={
+        "name": "legacy", "start": "2026-12-20", "end": "2027-01-06",
+        "recurring": "true", "mp3_id": str(mp3_id), "all_day": "true",
+    }, follow_redirects=False)
+    assert r.status_code == 303, r.text
+    with session_scope() as db:
+        s = db.query(Schedule).filter(Schedule.name == "legacy").one()
+        assert s.weekday_mask == 0b1111111
+        assert s.days_label == "Every day"
+
+
+def test_an_unknown_holiday_key_is_rejected(client):
+    mp3_id = _upload(client, "bad-key")
+    r = client.post("/schedules/create", data={
+        "name": "bogus", "start": "2026-01-01", "recurring": "true",
+        "mp3_id": str(mp3_id), "all_day": "true",
+        "day_rule": "1", "weekdays": ["0"], "holiday_keys": ["thanksgiving"],
+    }, follow_redirects=False)
+    assert r.status_code == 400
+
+
+def test_the_holidays_page_lists_the_catalogue_and_its_users(client):
+    mp3_id = _upload(client, "xmas-only")
+    client.post("/schedules/create", data={
+        "name": "just-xmas", "start": "2026-01-01", "end": "2026-12-31",
+        "recurring": "true", "mp3_id": str(mp3_id), "all_day": "true",
+        "day_rule": "1", "holiday_keys": ["christmas"],
+    }, follow_redirects=False)
+
+    r = client.get("/holidays")
+    assert r.status_code == 200
+    body = r.text
+    assert "Christmas Day" in body
+    assert "Easter Monday" in body
+    assert "German-speaking Community" in body
+    # The schedule that uses it is named on the row.
+    assert "just-xmas" in body

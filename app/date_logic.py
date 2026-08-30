@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
+from app import holidays
 from app.models import Mp3File, Schedule
 
 MINUTES_PER_DAY = 24 * 60
@@ -56,13 +57,37 @@ def matches_time(s: Schedule, minute_of_day: int) -> bool:
     return minute_of_day >= start or minute_of_day <= end
 
 
+def matches_day(s: Schedule, today: date) -> bool:
+    """Does the schedule's weekday / holiday rule cover this day?
+
+    A day matches when it is a ticked weekday **or** a ticked holiday. The two
+    are a union rather than an intersection on purpose: "Mo–Fr, and Christmas
+    whenever it falls" is the common case, and intersecting them would make it
+    impossible to say without ticking all seven days.
+
+    `skip_public_holidays` is the one subtraction, and it only ever removes a
+    day that matched by weekday. A holiday ticked explicitly always wins --
+    otherwise a schedule could name Christmas Day and skip it in the same
+    breath.
+    """
+    on_this_day = holidays.keys_on(today)
+    if s.holiday_keys & on_this_day:
+        return True
+    if not holidays.day_selected(s.weekday_mask, today.weekday()):
+        return False
+    skipped = s.skip_public_holidays and bool(on_this_day & holidays.PUBLIC_KEYS)
+    return not skipped
+
+
 def matches_today(s: Schedule, today: date) -> bool:
     """Date-only match, kept for callers that only care about the day."""
-    return matches_date(s, today)
+    return matches_date(s, today) and matches_day(s, today)
 
 
 def matches_now(s: Schedule, when: datetime) -> bool:
-    return matches_date(s, when.date()) and matches_time(s, when.hour * 60 + when.minute)
+    day = when.date()
+    return (matches_date(s, day) and matches_day(s, day)
+            and matches_time(s, when.hour * 60 + when.minute))
 
 
 def _window_span_days(s: Schedule) -> int:
@@ -80,6 +105,16 @@ def _window_span_days(s: Schedule) -> int:
     if end_ord >= start_ord:
         return end_ord - start_ord
     return (12 * 31) - start_ord + end_ord
+
+
+def _day_span(s: Schedule) -> int:
+    """How many weekdays the rule covers; fewer is more specific.
+
+    A holidays-only schedule scores 0 and therefore beats every weekday rule at
+    the same priority, which is what you want: naming Christmas Day is a more
+    deliberate statement than ticking Monday.
+    """
+    return holidays.day_count(s.weekday_mask)
 
 
 def _window_span_minutes(s: Schedule) -> int:
@@ -107,10 +142,17 @@ def pick_schedule(
 ) -> Schedule | None:
     """The single schedule that wins at this moment, or None if none match.
 
-    A schedule qualifies when its calendar window, its time-of-day window and
-    its device list all cover the request. Ties are broken by highest priority,
-    then by the most specific window — narrowest time range first, then
-    narrowest date range — and finally by id so the result is stable.
+    A schedule qualifies when its calendar window, its weekday/holiday rule,
+    its time-of-day window and its device list all cover the request. Ties are
+    broken by highest priority, then by the most specific window — narrowest
+    time range first, then fewest weekdays, then narrowest date range — and
+    finally by id so the result is stable.
+
+    The day term sits between the other two because that is its granularity:
+    a time window carves up a day, a weekday rule carves up a week, a date
+    range carves up a year. Every schedule that predates the day rule covers
+    all seven days and so scores identically on it, which is why adding the
+    term reorders nothing that already existed.
 
     The caller decides which kind of schedule to hand in: chime schedules and
     auto-response schedules are resolved separately and never compete.
@@ -121,21 +163,56 @@ def pick_schedule(
 
     candidates = [
         s for s in schedules
-        if matches_date(s, day) and matches_time(s, minute) and s.applies_to(device_id)
+        if matches_date(s, day) and matches_day(s, day)
+        and matches_time(s, minute) and s.applies_to(device_id)
     ]
     if not candidates:
         return None
 
     candidates.sort(
-        key=lambda s: (-s.priority, _window_span_minutes(s), _window_span_days(s), s.id)
+        key=lambda s: (-s.priority, _window_span_minutes(s), _day_span(s),
+                       _window_span_days(s), s.id)
     )
     return candidates[0]
+
+
+def describe_days(schedule: Schedule) -> str:
+    """'Mo–Fr, not on public holidays, plus Christmas Day' — the day rule in words.
+
+    Empty for a schedule that runs every day with no holiday rule, so the
+    common case adds nothing to a reason string.
+    """
+    mask = holidays.effective_mask(schedule.weekday_mask)
+    picked = schedule.holiday_keys or frozenset()
+    named = holidays.names(picked)
+
+    # No weekday at all: the holidays *are* the rule, so name them and stop.
+    if mask == holidays.NO_DAYS and named:
+        return ", ".join(named)
+
+    subtracts = bool(schedule.skip_public_holidays and mask)
+    tail: list[str] = []
+    if subtracts:
+        tail.append("not on public holidays")
+    # With every day ticked and nothing subtracted, a ticked holiday changes
+    # nothing -- saying "plus Christmas Day" would imply otherwise.
+    if named and (mask != holidays.ALL_DAYS or subtracts):
+        tail.append("plus " + ", ".join(named))
+
+    parts: list[str] = []
+    if mask != holidays.ALL_DAYS or tail:
+        parts.append(holidays.describe_days(mask))
+    parts.extend(tail)
+    return ", ".join(parts)
 
 
 def describe(schedule: Schedule) -> str:
     detail = f"schedule '{schedule.name}' (priority {schedule.priority})"
     if not schedule.all_day:
         detail += f" {_fmt_minute(schedule.start_minute)}–{_fmt_minute(schedule.end_minute)}"
+    days = describe_days(schedule)
+    if days:
+        detail += f" [{days}]"
     return detail
 
 
@@ -167,6 +244,10 @@ def change_minutes(schedules: list[Schedule]) -> list[int]:
     A schedule can only start or stop mattering on one of its own window
     edges, so those edges plus midnight are the complete set of moments worth
     testing -- scanning all 1440 minutes of 366 days would be pointless work.
+
+    Midnight is in the set unconditionally, and that is what covers the
+    weekday and holiday rules too: a day rule can only change at the day
+    boundary, so no extra candidate minute is needed for it.
     """
     minutes = {0}
     for s in schedules:

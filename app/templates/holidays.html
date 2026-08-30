@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% set active_nav = "holidays" %}
+{% block title %}Holidays{% endblock %}
+{% block content %}
+
+<div class="topbar">
+  <div>
+    <h1>Belgian holidays</h1>
+    <p class="sub">
+      The list a schedule picks from. Fixed dates are a rule; the five that move
+      with Easter are stored occurrence by occurrence, so no page or ring ever has
+      to work one out.
+    </p>
+  </div>
+  <div class="topbar-actions">
+    <span class="chip">{{ icon("cal") }}{{ total }} holidays</span>
+  </div>
+</div>
+
+<div class="stack">
+
+  <div class="note note--info">
+    {{ icon("info", 16) }}
+    <div class="note-body">
+      Only the ten <strong>public holidays</strong> count for a schedule's
+      &ldquo;skip public holidays&rdquo; switch. Community days and observances never
+      subtract a day &mdash; they only add one when you tick them on a
+      <a href="/schedules">chime schedule</a>.
+    </div>
+  </div>
+
+  {% for group_key, group_label, members in groups %}
+  <section class="card">
+    <div class="card-head">
+      <span class="card-title">{{ icon("cal", 16) }}{{ group_label }}</span>
+      <span class="card-actions"><span class="card-count">{{ members | length }}</span></span>
+    </div>
+    <div class="card-body is-flush">
+      <div class="tbl-wrap">
+        <table class="tbl tbl--dense">
+          <thead>
+            <tr>
+              <th style="width:16rem">Name</th>
+              <th style="width:11rem">Rule</th>
+              <th style="width:12rem">Next occurrence</th>
+              <th style="width:9rem">Stored</th>
+              <th>Used by</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for h in members %}
+            <tr>
+              <td class="name">{{ h.name }}</td>
+              <td>{{ h.rule }}</td>
+              <td class="nowrap">
+                {% set when = next_dates.get(h.key) %}
+                {% if when %}{{ when.strftime("%a %d %b %Y") }}{% else %}<span class="muted">&mdash;</span>{% endif %}
+              </td>
+              <td>
+                {% if h.key in moving_keys %}
+                  <span class="chip chip--sm chip--warn">{{ icon("refresh", 12) }}moves</span>
+                {% else %}
+                  <span class="muted">rule only</span>
+                {% endif %}
+              </td>
+              <td>
+                {% set owners = used.get(h.key) %}
+                {% if owners %}
+                  <span class="inline-tight">
+                    {% for n in owners %}<span class="chip chip--sm chip--live">{{ n }}</span>{% endfor %}
+                  </span>
+                {% else %}
+                  <span class="muted">&mdash;</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+  {% endfor %}
+
+  <section class="card">
+    <div class="card-head">
+      <span class="card-title">{{ icon("refresh", 16) }}The stored dates</span>
+    </div>
+    <div class="card-body">
+      <p class="help" style="font-size:12.5px">
+        {{ moving_keys | length }} of them move with Easter. Their dates are worked
+        out once and written to the database &mdash; one row per holiday per year,
+        {{ horizon_years }} years ahead of today, {{ stored_rows }} rows in all &mdash; so asking
+        &ldquo;is today a holiday?&rdquo; on a ring is a lookup rather than a calculation
+        on the thread that is meant to be pushing audio at a door station.
+      </p>
+      {% if stored_span %}
+      <p class="help" style="font-size:12.5px">
+        Currently holding <strong>{{ stored_span[0].strftime("%d %b %Y") }}</strong>
+        through <strong>{{ stored_span[1].strftime("%d %b %Y") }}</strong>. The horizon
+        rolls forward on its own: every start tops the table up so a full
+        {{ horizon_years }} years are always ahead of you.
+      </p>
+      {% else %}
+      <p class="help" style="font-size:12.5px">
+        Nothing stored yet &mdash; the table fills on the next start.
+      </p>
+      {% endif %}
+    </div>
+  </section>
+
+</div>
+{% endblock %}

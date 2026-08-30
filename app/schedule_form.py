@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from app import holidays
+
 MINUTES_PER_DAY = 24 * 60
 
 # An auto response that waits longer than this is almost certainly a typo --
@@ -111,6 +113,88 @@ def build_date_fields(*, start: str, end: str, recurring: bool) -> dict[str, int
         "start_year": sd.year,
         "end_year": None if single_day else ed.year,
     }
+
+
+@dataclass(frozen=True)
+class DayRule:
+    """The weekday/holiday half of the form, parsed and checked."""
+
+    weekday_mask: int
+    holiday_keys: tuple[str, ...]
+    skip_public_holidays: bool
+
+    def as_fields(self) -> dict[str, int | bool]:
+        """Only the plain columns; the keys go through `set_holiday_keys`."""
+        return {
+            "weekday_mask": self.weekday_mask,
+            "skip_public_holidays": self.skip_public_holidays,
+        }
+
+
+def build_day_rule(
+    *,
+    weekdays: list[str] | None,
+    holiday_keys: list[str] | None,
+    skip_public_holidays: bool,
+    present: bool = True,
+) -> DayRule:
+    """Turn the seven day checkboxes and the holiday list into stored fields.
+
+    The form posts weekday numbers rather than a mask, because seven checkboxes
+    named the same thing is what HTML gives you and reassembling them here beats
+    asking the browser for arithmetic.
+
+    `present` is the form's hidden marker saying the day controls were on the
+    page at all. Unchecked checkboxes submit nothing, so a post with no days
+    ticked and a post from a client that predates the whole feature arrive
+    looking identical -- and they mean opposite things. Without the marker the
+    answer is "every day", which is what such a schedule has always done.
+
+    With the marker, a rule that ticks no day and no holiday can never fire.
+    That is almost always a half-finished edit rather than an intent to silence
+    the schedule -- there is an Enabled switch for that -- so it is rejected
+    rather than saved as something that quietly never plays.
+    """
+    if not present:
+        return DayRule(weekday_mask=holidays.ALL_DAYS, holiday_keys=(),
+                       skip_public_holidays=False)
+
+    mask = 0
+    for raw in weekdays or []:
+        text = str(raw).strip()
+        if not text:
+            continue
+        try:
+            index = int(text)
+        except ValueError as exc:
+            raise FormError(f"{text!r} is not a day of the week") from exc
+        if not 0 <= index <= 6:
+            raise FormError(f"day of the week must be 0–6, got {index}")
+        mask |= 1 << index
+
+    keys: list[str] = []
+    for raw in holiday_keys or []:
+        key = str(raw).strip()
+        if not key:
+            continue
+        if key not in holidays.VALID_KEYS:
+            raise FormError(f"unknown holiday {key!r}")
+        if key not in keys:
+            keys.append(key)
+
+    if not mask and not keys:
+        raise FormError(
+            "pick at least one day of the week, or one holiday — "
+            "a schedule with neither could never play")
+
+    # With no weekday ticked there is nothing for the skip to subtract from,
+    # and a stored true would be a trap: the form disables the switch in that
+    # state, so it must not survive a round trip either.
+    return DayRule(
+        weekday_mask=mask,
+        holiday_keys=tuple(keys),
+        skip_public_holidays=bool(skip_public_holidays) and bool(mask),
+    )
 
 
 def clean_delay(kind: str, delay_seconds: int, *, auto_response_kind: str) -> int:

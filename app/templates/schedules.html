@@ -12,6 +12,77 @@
 #}
 {% set kind_icon = "speech" if is_auto else "bell" %}
 
+{#
+  The day rule appears twice -- once per table row, once in the add form --
+  and the two must not drift, so they come from one macro. `fid` is the id of
+  the out-of-table <form> a row's controls point at; the add form passes an
+  empty string because its fields are already inside it.
+#}
+{% macro day_strip(fid, mask, small=false) %}
+  <div class="daystrip {{ 'daystrip--sm' if small else '' }} js-daystrip">
+    {% for i in range(7) %}
+      <label class="daypick" title="{{ weekday_names[i] }}">
+        <input {% if fid %}form="{{ fid }}"{% endif %} type="checkbox" name="weekdays"
+               value="{{ i }}" {% if mask is not none and (mask // 2 ** i) % 2 %}checked{% endif %}
+               aria-label="{{ weekday_names[i] }}">
+        <span class="day">{{ weekday_labels[i] }}</span>
+      </label>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
+{% macro preset_buttons() %}
+  <div class="day-presets">
+    {% for label, value in day_presets %}
+      <button class="day-preset js-preset" type="button" data-mask="{{ value }}">{{ label }}</button>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
+{% macro holiday_boxes(fid, chosen, narrow=false) %}
+  {% for group_key, group_label, members in holiday_groups %}
+    <div class="hol-group">
+      <div class="hol-head">
+        <span class="micro">{{ group_label }}</span>
+        <span class="chip chip--sm js-holcount" data-group="{{ group_key }}">
+          {{ members | selectattr('key', 'in', chosen) | list | length }} of {{ members | length }}
+        </span>
+        <span class="rule"></span>
+        <button class="hol-bulk js-holbulk" type="button"
+                data-group="{{ group_key }}" data-on="1">All</button>
+        <span class="hol-bulk-sep">/</span>
+        <button class="hol-bulk js-holbulk" type="button"
+                data-group="{{ group_key }}" data-on="0">None</button>
+      </div>
+      <div class="holgrid {{ 'holgrid--narrow' if narrow else '' }}">
+        {% for h in members %}
+          <label class="hol">
+            <input {% if fid %}form="{{ fid }}"{% endif %} type="checkbox" name="holiday_keys"
+                   value="{{ h.key }}" data-group="{{ group_key }}"
+                   {% if h.key in chosen %}checked{% endif %}>
+            <span class="box">{{ icon("check", 13) }}</span>
+            <span class="hol-name">{{ h.name }}</span>
+            <span class="hol-when">
+              {% if h.moves %}{{ icon("refresh", 11) }}moves{% else %}{{ h.short_rule }}{% endif %}
+            </span>
+          </label>
+        {% endfor %}
+      </div>
+    </div>
+  {% endfor %}
+{% endmacro %}
+
+{% macro skip_switch(fid, on, uid) %}
+  <label class="switch">
+    <input class="js-skip" {% if fid %}form="{{ fid }}"{% endif %} type="checkbox"
+           name="skip_public_holidays" value="true" id="skip_{{ uid }}"
+           {% if on %}checked{% endif %}>
+    <span class="track"></span>
+    <span class="switch-label">Skip public holidays</span>
+    <span class="state"><span class="on">On</span><span class="off">Off</span></span>
+  </label>
+{% endmacro %}
+
 <div class="topbar">
   <div>
     <h1>{{ page_title }}</h1>
@@ -71,7 +142,12 @@
       {% for s in schedules %}
         <form id="sched-{{ s.id }}" method="post" action="{{ base_url }}/{{ s.id }}/update"
               autocomplete="off" hidden>
-          {{ csrf_input(request) }}</form>
+          {{ csrf_input(request) }}
+          {# Tells the server this submission carried the day controls at all.
+             Without it an untouched "no boxes ticked" post is indistinguishable
+             from a client that predates them, and one of those is an error
+             while the other must keep working. #}
+          <input type="hidden" name="day_rule" value="1"></form>
         <form id="del-{{ s.id }}" method="post" action="{{ base_url }}/{{ s.id }}/delete"
               hidden onsubmit="return confirm('Delete {{ s.name }}?');">
           {{ csrf_input(request) }}</form>
@@ -82,6 +158,7 @@
             <th style="width:13rem">Name</th>
             <th style="width:11rem">Dates</th>
             <th style="width:6rem">Every year</th>
+            <th style="width:19rem">Days</th>
             <th style="width:15rem">Time of day</th>
             {% if is_auto %}<th style="width:8rem">Wait</th>{% endif %}
             <th style="width:12rem">Applies to</th>
@@ -126,6 +203,27 @@
                 <span class="box">{{ icon("check", 13) }}</span>
                 <span class="sr-only">Recurring annually</span>
               </label>
+            </td>
+            <td>
+              {# Editable in the row, like every other control on it. The
+                 nineteen holidays cannot fit a cell, so they open in place
+                 rather than in an overlay -- .card clips one, .tbl-wrap
+                 clips the other. #}
+              <div class="stack-sm js-dayrule" style="gap:8px">
+                {{ day_strip(f, s.weekday_mask, small=true) }}
+                <details class="holpick">
+                  <summary>
+                    <span class="js-holsum {{ 'holpick-none' if not s.holiday_keys and not s.skip_public_holidays else '' }}">
+                      {{ s.holiday_summary }}</span>
+                    {{ icon("chev-d", 14) }}
+                  </summary>
+                  <div class="holpick-panel">
+                    {{ holiday_boxes(f, s.holiday_keys, narrow=true) }}
+                    <div class="divider-soft"></div>
+                    {{ skip_switch(f, s.skip_public_holidays, s.id) }}
+                  </div>
+                </details>
+              </div>
             </td>
             <td>
               <div class="stack-sm" style="gap:6px">
@@ -211,7 +309,7 @@
             </td>
           </tr>
         {% else %}
-          <tr><td colspan="{{ 10 if is_auto else 9 }}">
+          <tr><td colspan="{{ 11 if is_auto else 10 }}">
             <span class="muted">No {{ noun }}s yet — add one below.</span>
           </td></tr>
         {% endfor %}
@@ -240,6 +338,7 @@
       <form method="post" action="{{ base_url }}/create" enctype="multipart/form-data"
             autocomplete="off" class="stack">
         {{ csrf_input(request) }}
+        <input type="hidden" name="day_rule" value="1">
 
         <fieldset class="panel">
           <legend>Name and dates</legend>
@@ -281,6 +380,57 @@
               With <strong>Recurring annually</strong> the year is ignored and only the
               month/day matters. Date ranges may wrap year-end (Dec 20 → Jan 6).
             </p>
+          </div>
+        </fieldset>
+
+        <fieldset class="panel">
+          <legend>Days and holidays</legend>
+          <div class="panel-body js-dayrule" style="gap:18px">
+
+            <div class="stack-sm" style="gap:10px">
+              <span class="field-label">Days of the week</span>
+              {{ preset_buttons() }}
+              {{ day_strip("", all_days_mask) }}
+              <p class="help">
+                The presets only tick boxes for you. Change any single day afterwards
+                and the schedule keeps working &mdash; there is no preset to stay inside.
+              </p>
+            </div>
+
+            <div class="stack-sm" style="gap:12px">
+              <div class="inline">
+                <span class="field-label">Belgian holidays</span>
+                <span class="chip chip--sm js-holtotal">0 of {{ holiday_total }} selected</span>
+                <span class="push"></span>
+                <a class="small muted" href="/holidays">See every date &rarr;</a>
+              </div>
+              {{ holiday_boxes("", []) }}
+              <p class="help inline" style="gap:6px">
+                {{ icon("refresh", 11) }}
+                Moves each year. Every occurrence through the next century is already
+                stored &mdash; <a href="/holidays">the dates are here</a>.
+              </p>
+            </div>
+
+            <div class="stack-sm" style="gap:9px">
+              {{ skip_switch("", false, "new") }}
+              <p class="help" style="max-width:760px">
+                With this on, a day that matched only because of its weekday is dropped
+                when it is one of the ten public holidays &mdash; that is how you write
+                &ldquo;Mo&ndash;Fr, but not on a public holiday&rdquo;. Holidays ticked
+                above are never dropped: they always apply.
+              </p>
+            </div>
+
+            <div class="note note--info">
+              {{ icon("info", 16) }}
+              <div class="note-body">
+                A day matches when it is a ticked <strong>weekday</strong> or a ticked
+                <strong>holiday</strong>. So Mo&ndash;Fr plus Christmas Day fires on
+                Christmas even when it falls on a Sunday.
+              </div>
+            </div>
+
           </div>
         </fieldset>
 
@@ -443,5 +593,110 @@
     window.addEventListener("hashchange", open);
     open();
   })();
+
+  // The day rule: seven weekday boxes, nineteen holidays and a skip switch --
+  // once per table row, once more in the add form. Everything scopes to the
+  // nearest .js-dayrule so one row can never drive another row's boxes.
+  //
+  // None of this is required to save: the server reads the checkboxes and
+  // applies the same rules. It only keeps the counts, the preset highlight and
+  // the collapsed summary honest while you are still editing.
+  document.querySelectorAll(".js-dayrule").forEach(function (scope) {
+    var days = Array.prototype.slice.call(scope.querySelectorAll('input[name="weekdays"]'));
+    var hols = Array.prototype.slice.call(scope.querySelectorAll('input[name="holiday_keys"]'));
+    var presets = Array.prototype.slice.call(scope.querySelectorAll(".js-preset"));
+    var counts = Array.prototype.slice.call(scope.querySelectorAll(".js-holcount"));
+    var skip = scope.querySelector(".js-skip");
+    var summary = scope.querySelector(".js-holsum");
+    var total = scope.querySelector(".js-holtotal");
+
+    function mask() {
+      var m = 0;
+      days.forEach(function (d) { if (d.checked) { m |= 1 << Number(d.value); } });
+      return m;
+    }
+
+    function chosen() {
+      return hols.filter(function (h) { return h.checked; });
+    }
+
+    function nameOf(box) {
+      var el = box.parentNode.querySelector(".hol-name");
+      return el ? el.textContent.trim() : "";
+    }
+
+    // A preset is not a stored mode -- it lights up when the boxes happen to
+    // match it, and goes out the moment you change a day.
+    function syncPresets() {
+      var m = mask();
+      presets.forEach(function (b) {
+        b.classList.toggle("is-on", Number(b.dataset.mask) === m);
+      });
+    }
+
+    // With no weekday ticked there is nothing for the skip to subtract from.
+    // The server refuses to store it in that state, so it must not look live.
+    function syncSkip() {
+      if (!skip) { return; }
+      var none = mask() === 0;
+      skip.disabled = none;
+      var wrap = skip.closest(".switch");
+      if (wrap) { wrap.classList.toggle("is-muted", none); }
+    }
+
+    function syncCounts() {
+      counts.forEach(function (chip) {
+        var group = chip.dataset.group;
+        var members = hols.filter(function (h) { return h.dataset.group === group; });
+        var on = members.filter(function (h) { return h.checked; }).length;
+        chip.textContent = on + " of " + members.length;
+        chip.classList.toggle("chip--live", on > 0);
+      });
+
+      var picked = chosen();
+      if (total) {
+        total.textContent = picked.length + " of " + hols.length + " selected";
+        total.classList.toggle("chip--live", picked.length > 0);
+      }
+      if (summary) {
+        var skipping = skip && skip.checked && !skip.disabled;
+        var label;
+        if (picked.length === 0) {
+          label = skipping ? "None · skipping holidays" : "No holidays";
+        } else {
+          label = picked.length === 1 ? nameOf(picked[0]) : picked.length + " holidays";
+          if (skipping) { label += " · skipping"; }
+        }
+        summary.textContent = label;
+        summary.classList.toggle("holpick-none", picked.length === 0 && !skipping);
+      }
+    }
+
+    function syncAll() { syncPresets(); syncSkip(); syncCounts(); }
+
+    presets.forEach(function (button) {
+      button.addEventListener("click", function () {
+        var m = Number(button.dataset.mask);
+        days.forEach(function (d) { d.checked = (m >> Number(d.value) & 1) === 1; });
+        syncAll();
+      });
+    });
+
+    scope.querySelectorAll(".js-holbulk").forEach(function (button) {
+      button.addEventListener("click", function () {
+        var on = button.dataset.on === "1";
+        hols.forEach(function (h) {
+          if (h.dataset.group === button.dataset.group) { h.checked = on; }
+        });
+        syncCounts();
+      });
+    });
+
+    days.forEach(function (d) { d.addEventListener("change", syncAll); });
+    hols.forEach(function (h) { h.addEventListener("change", syncCounts); });
+    if (skip) { skip.addEventListener("change", syncCounts); }
+
+    syncAll();
+  });
 </script>
 {% endblock %}

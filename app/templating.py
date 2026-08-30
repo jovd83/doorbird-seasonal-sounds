@@ -107,14 +107,16 @@ NAV: list[dict[str, str]] = [
     {"key": "auto",        "label": "Auto responses",  "short": "Auto",       "href": "/auto-responses", "icon": "speech"},
     {"key": "mp3s",        "label": "MP3s",            "short": "MP3s",       "href": "/mp3s",           "icon": "wave"},
     {"key": "collections", "label": "Collections",     "short": "Sets",       "href": "/collections",    "icon": "shuffle"},
+    {"key": "holidays",    "label": "Holidays",        "short": "Holidays",   "href": "/holidays",       "icon": "cal"},
     {"key": "audit",       "label": "Audit",           "short": "Audit",      "href": "/audit",          "icon": "log"},
     {"key": "settings",    "label": "Settings",        "short": "Settings",   "href": "/settings",       "icon": "sliders"},
 ]
 
-# Eight entries do not fit a bottom bar at a 44px hit target, so mobile keeps
+# Nine entries do not fit a bottom bar at a 44px hit target, so mobile keeps
 # four and files the rest under "More".
 MOBILE_TABS = [n for n in NAV if n["key"] in ("dashboard", "devices", "chimes", "auto")]
-MORE_TABS = [n for n in NAV if n["key"] in ("mp3s", "collections", "audit", "settings")]
+MORE_TABS = [n for n in NAV
+             if n["key"] in ("mp3s", "collections", "holidays", "audit", "settings")]
 MORE_KEYS = [n["key"] for n in MORE_TABS]
 
 

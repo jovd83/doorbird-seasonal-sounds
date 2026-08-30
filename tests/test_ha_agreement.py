@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from app import date_logic as app_logic
+from app.holidays import ALL_DAYS, WEEKDAYS, WEEKEND
 from app.models import Mp3File
 from app.models import Schedule as AppSchedule
 
@@ -50,10 +51,14 @@ def _app_schedule(**kw) -> AppSchedule:
         "enabled": True,
         "start_minute": None, "end_minute": None,
         "delay_seconds": 0,
+        "weekday_mask": ALL_DAYS,
+        "skip_public_holidays": False,
     }
+    keys = kw.pop("holiday_keys", ())
     fields.update(kw)
     s = AppSchedule(**fields)
     s.mp3 = Mp3File(id=fields["mp3_id"], label=label, filename="x.mp3", size_bytes=1)
+    s.set_holiday_keys(keys)
     return s
 
 
@@ -67,7 +72,10 @@ def _ha_schedule(**kw) -> ha_logic.Schedule:
         "priority": 100,
         "start_minute": None, "end_minute": None,
         "enabled": True,
+        "weekday_mask": ALL_DAYS,
+        "skip_public_holidays": False,
     }
+    kw["holiday_keys"] = frozenset(kw.get("holiday_keys", ()))
     kw.pop("id", None)
     kw.pop("kind", None)
     kw.pop("mp3_id", None)
@@ -94,6 +102,22 @@ FIXTURES: dict[str, dict] = {
     "disabled":        dict(start_month=1, start_day=1, end_month=12, end_day=31,
                             enabled=False, priority=999),
     "leap-day":        dict(start_month=2, start_day=29, priority=400),
+    # The day rule. Each of these resolves differently from the plain
+    # calendar ones on at least one moment below, which is the only way the
+    # comparison can catch a copy that has not learned about weekdays.
+    "weekdays-only":   dict(start_month=1, start_day=1, end_month=12, end_day=31,
+                            weekday_mask=WEEKDAYS, priority=260),
+    "weekend-only":    dict(start_month=1, start_day=1, end_month=12, end_day=31,
+                            weekday_mask=WEEKEND, priority=260),
+    "workdays":        dict(start_month=1, start_day=1, end_month=12, end_day=31,
+                            weekday_mask=WEEKDAYS, skip_public_holidays=True,
+                            priority=270),
+    "xmas-and-sint":   dict(start_month=1, start_day=1, end_month=12, end_day=31,
+                            weekday_mask=0, holiday_keys=("christmas", "sinterklaas"),
+                            priority=280),
+    "weekdays-plus":   dict(start_month=1, start_day=1, end_month=12, end_day=31,
+                            weekday_mask=WEEKDAYS, skip_public_holidays=True,
+                            holiday_keys=("christmas",), priority=290),
 }
 
 MOMENTS = [
@@ -108,6 +132,13 @@ MOMENTS = [
     datetime(2028, 2, 29, 11, 0),
     datetime(2026, 6, 1, 0, 0),
     datetime(2026, 6, 1, 23, 59),
+    datetime(2026, 8, 29, 12, 0),    # Saturday, ordinary
+    datetime(2026, 8, 31, 12, 0),    # Monday, ordinary
+    datetime(2026, 11, 11, 12, 0),   # Armistice Day, a Wednesday
+    datetime(2026, 12, 6, 12, 0),    # Sinterklaas, a Sunday
+    datetime(2026, 12, 25, 12, 0),   # Christmas Day, a Friday
+    datetime(2026, 12, 31, 12, 0),   # New Year's Eve, a Thursday
+    datetime(2027, 3, 29, 12, 0),    # Easter Monday
 ]
 
 
@@ -194,3 +225,19 @@ def test_date_only_helpers_agree():
         for day in (date(2026, 1, 3), date(2026, 7, 14), date(2026, 12, 25)):
             assert app_logic.matches_today(app_s, day) == ha_logic.matches_today(ha_s, day), \
                 f"{name} on {day}"
+
+
+def test_the_vendored_holiday_catalogue_is_byte_identical():
+    """The rules are only worth comparing if they read the same calendar.
+
+    `holidays.py` is copied rather than reimplemented, so this is an equality
+    check on the file itself instead of a behavioural sweep: any divergence at
+    all is a mistake, and copying is the fix.
+    """
+    ours = Path(app_logic.__file__).with_name("holidays.py")
+    theirs = _HA_COMPONENT / "holidays.py"
+    assert theirs.exists(), "the HA component is missing its copy of holidays.py"
+    assert theirs.read_bytes() == ours.read_bytes(), (
+        "home_assistant/custom_components/doorbird_seasonal/holidays.py has drifted "
+        "from app/holidays.py — copy the app's file over it"
+    )

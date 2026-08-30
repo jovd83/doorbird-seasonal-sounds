@@ -16,6 +16,7 @@ from app.routes import (
     collections,
     dashboard,
     devices,
+    holidays,
     mp3s,
     ring_hook,
     schedules,
@@ -76,6 +77,7 @@ app.include_router(schedules.router)
 app.include_router(schedules.auto_response_router)
 app.include_router(mp3s.router)
 app.include_router(collections.router)
+app.include_router(holidays.router)
 app.include_router(audit.router)
 app.include_router(settings_ui.router)
 app.include_router(ring_hook.router)
