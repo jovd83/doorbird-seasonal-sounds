@@ -225,3 +225,45 @@ def test_the_next_change_is_found_at_a_day_boundary():
 ])
 def test_the_rule_reads_as_a_sentence(kwargs, expected):
     assert describe_days(_sched(**kwargs)) == expected
+
+
+# ------------------------------------------------------ what the row shows
+
+
+def test_all_days_is_the_absence_of_a_rule_not_a_stored_flag():
+    assert _sched().is_all_days
+    assert not _sched(weekday_mask=holidays.WEEKDAYS).is_all_days
+    assert not _sched(holiday_keys=("christmas",)).is_all_days
+    assert not _sched(skip_public_holidays=True).is_all_days
+
+
+def test_an_unflushed_schedule_reads_as_all_days():
+    """`None` is what the mask is before the INSERT applies its default."""
+    assert _sched(weekday_mask=None).is_all_days
+
+
+@pytest.mark.parametrize(("kwargs", "expected"), [
+    ({}, "Every day"),
+    ({"weekday_mask": holidays.WEEKDAYS}, "Mo–Fr"),
+    ({"weekday_mask": holidays.WEEKEND}, "Sa–Su"),
+    ({"weekday_mask": 0b0010101}, "Mo, We, Fr"),
+    ({"weekday_mask": holidays.WEEKDAYS, "skip_public_holidays": True},
+     "Mo–Fr · skipping"),
+    ({"weekday_mask": holidays.WEEKDAYS, "holiday_keys": ("christmas",)},
+     "Mo–Fr · Christmas Day"),
+    ({"weekday_mask": holidays.WEEKDAYS, "holiday_keys": ("christmas", "sinterklaas"),
+      "skip_public_holidays": True}, "Mo–Fr · 2 holidays · skipping"),
+    ({"weekday_mask": holidays.NO_DAYS, "holiday_keys": ("christmas",)},
+     "No weekday · Christmas Day"),
+    # Skip has nothing to act on without a weekday, so it is not mentioned.
+    ({"weekday_mask": holidays.NO_DAYS, "holiday_keys": ("christmas",),
+      "skip_public_holidays": True}, "No weekday · Christmas Day"),
+])
+def test_the_row_summary_says_what_the_rule_is(kwargs, expected):
+    assert _sched(**kwargs).day_summary == expected
+
+
+def test_a_single_holiday_is_named_rather_than_counted():
+    """'1 holiday' tells you nothing; the name tells you everything."""
+    assert "Christmas Day" in _sched(
+        weekday_mask=holidays.NO_DAYS, holiday_keys=("christmas",)).day_summary

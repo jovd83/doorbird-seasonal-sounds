@@ -528,8 +528,8 @@ table.tbl .nowrap { white-space: nowrap; }
 
 /* Inline-edit tables carry real form controls, so they get a floor width and
    scroll inside .tbl-wrap rather than crushing every input. */
-table.tbl--form { min-width: 1690px; }
-table.tbl--form.has-wait { min-width: 1810px; }
+table.tbl--form { min-width: 1500px; }
+table.tbl--form.has-wait { min-width: 1620px; }
 table.tbl--form td { padding-top: 12px; padding-bottom: 12px; vertical-align: top; }
 table.tbl--form select[multiple] { min-height: 84px; }
 
@@ -760,38 +760,6 @@ audio {
 .day-preset:hover { background: var(--raised); color: var(--text); }
 .day-preset.is-on { background: var(--raised); border-color: var(--accent-line); color: var(--text); }
 
-/* Nineteen holidays will not fit a table cell, so the row carries a summary
-   that opens in place. Deliberately in the flow rather than an absolutely
-   positioned popover: .card has overflow:hidden and .tbl-wrap scrolls, so an
-   overlay would be clipped by both. */
-.holpick { min-width: 0; }
-.holpick > summary {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  height: 34px; padding: 0 10px; border-radius: 10px;
-  border: 1px solid var(--line); background: var(--raised);
-  color: var(--text); font-size: 12.5px; font-weight: 500;
-  cursor: pointer; list-style: none; white-space: nowrap;
-}
-.holpick > summary::-webkit-details-marker { display: none; }
-.holpick > summary:hover { border-color: var(--faint); }
-.holpick > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.holpick[open] > summary { border-color: var(--accent-line); }
-.holpick > summary .ic { color: var(--muted); transition: transform .15s ease; }
-.holpick[open] > summary .ic { transform: rotate(180deg); }
-.holpick-none { color: var(--faint); }
-.divider-soft { height: 1px; background: var(--line-soft); }
-/* A switch with nothing to act on -- no weekday ticked, so no day for
-   'skip public holidays' to remove. Dimmed rather than hidden: it has to
-   stay visible to explain why it cannot be used. */
-.switch.is-muted { opacity: 0.5; cursor: not-allowed; }
-
-.holpick-panel {
-  margin-top: 8px; padding: 12px;
-  max-height: 300px; overflow-y: auto;
-  border: 1px solid var(--line); border-radius: 12px; background: var(--sunk);
-  display: flex; flex-direction: column; gap: 12px;
-}
-
 /* Group header: label, a count, a rule to the edge, and the two bulk links. */
 .hol-group { display: flex; flex-direction: column; gap: 9px; }
 .hol-head { display: flex; align-items: center; gap: 9px; }
@@ -834,6 +802,83 @@ audio {
   background: var(--raised); border: 1px solid var(--line);
 }
 .daydots .pip.is-on { background: var(--accent); border-color: var(--accent); }
+
+/* ------------------------------------------------- All / Custom + modal */
+/* Two radios drawn as one control. The row only has to say which of two
+   states it is in; everything else moved into the modal. */
+.segmented {
+  display: inline-flex; align-items: stretch;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--raised); padding: 2px; gap: 2px;
+}
+.seg { position: relative; display: flex; cursor: pointer; }
+.seg input { position: absolute; opacity: 0; width: 0; height: 0; }
+.seg-face {
+  display: flex; align-items: center; justify-content: center;
+  min-width: 62px; height: 28px; padding: 0 12px; border-radius: 8px;
+  color: var(--muted); font-size: 12.5px; font-weight: 600; white-space: nowrap;
+}
+.seg:hover .seg-face { color: var(--text2); }
+.seg input:checked + .seg-face { background: var(--elev); color: var(--text); }
+.seg input:focus-visible + .seg-face { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The line under the control: what the rule currently says, and the way in. */
+.day-summary {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  max-width: 100%; padding: 2px 0;
+  font-size: 11.5px; font-weight: 600; color: var(--text2);
+}
+.day-summary .ic { color: var(--muted); flex: none; }
+.day-summary:hover { color: var(--text); }
+.day-summary:hover .ic { color: var(--accent); }
+.day-summary.is-muted { color: var(--muted); font-weight: 500; }
+.day-summary > span:first-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Driven by a checkbox so it opens with scripting off, like the mobile
+   "More" sheet. `position: fixed` is what gets it out of .card's
+   overflow:hidden and .tbl-wrap's sideways scroll. */
+.modal-toggle { position: absolute; opacity: 0; width: 0; height: 0; }
+.modal {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  visibility: hidden; opacity: 0;
+  transition: opacity .14s ease, visibility .14s ease;
+}
+.modal-toggle:checked + .modal { visibility: visible; opacity: 1; }
+.modal-shade { position: absolute; inset: 0; background: var(--shade); cursor: default; }
+.modal-panel {
+  position: relative; z-index: 1;
+  width: 100%; max-width: 720px; max-height: calc(100vh - 48px);
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--elev); border: 1px solid var(--line); border-radius: 18px;
+  transform: translateY(8px); transition: transform .14s ease;
+}
+.modal-toggle:checked + .modal .modal-panel { transform: translateY(0); }
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 20px; border-bottom: 1px solid var(--line-soft); flex: none;
+}
+.modal-head .icon-btn { cursor: pointer; }
+.modal-body {
+  padding: 20px; display: flex; flex-direction: column; gap: 16px;
+  overflow-y: auto; min-height: 0;
+}
+.modal-foot {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 20px; border-top: 1px solid var(--line-soft); flex: none;
+}
+.modal-foot .btn { cursor: pointer; }
+
+@media (max-width: 720px) {
+  .modal { padding: 0; align-items: flex-end; }
+  .modal-panel { max-width: none; border-radius: 18px 18px 0 0; max-height: 92vh; }
+  .holgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 480px) {
+  .holgrid { grid-template-columns: minmax(0, 1fr); }
+}
 
 @media print {
   .sidebar, .mobile-bar, .mobile-head, .topbar-actions, .more-sheet { display: none !important; }

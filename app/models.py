@@ -206,6 +206,41 @@ class Schedule(Base):
     def days_label(self) -> str:
         return holidays.describe_days(self.weekday_mask)
 
+    @property
+    def is_all_days(self) -> bool:
+        """True when the schedule has no day rule worth showing.
+
+        Drives which way the row's All/Custom radio sits. Deliberately not a
+        stored column: 'all days, no holidays, nothing skipped' is a state the
+        other three fields already describe, and a fourth field saying the
+        same thing is a fourth field that can disagree with them.
+        """
+        return (
+            holidays.effective_mask(self.weekday_mask) == holidays.ALL_DAYS
+            and not self.holiday_keys
+            and not self.skip_public_holidays
+        )
+
+    @property
+    def day_summary(self) -> str:
+        """'Mo–Fr · 2 holidays · skipping' — the row's one-line day rule.
+
+        The modal's script rebuilds this same string as you edit, so the two
+        have to agree; keeping the server's version here rather than in the
+        template is what makes that pair checkable.
+        """
+        if self.is_all_days:
+            return "Every day"
+        parts = [holidays.describe_days(self.weekday_mask)]
+        names = self.holiday_names
+        if len(names) == 1:
+            parts.append(names[0])
+        elif names:
+            parts.append(f"{len(names)} holidays")
+        if self.skip_public_holidays and holidays.effective_mask(self.weekday_mask):
+            parts.append("skipping")
+        return " · ".join(parts)
+
     def day_on(self, weekday: int) -> bool:
         """Template helper: is this weekday ticked? Monday is 0."""
         return holidays.day_selected(self.weekday_mask, weekday)

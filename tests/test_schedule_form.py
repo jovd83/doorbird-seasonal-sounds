@@ -65,7 +65,7 @@ def test_rejects_bad_date_format():
 
 
 def test_weekday_numbers_become_a_bitmask():
-    rule = build_day_rule(weekdays=["0", "2", "4"], holiday_keys=[],
+    rule = build_day_rule(mode="custom", weekdays=["0", "2", "4"], holiday_keys=[],
                           skip_public_holidays=False)
     assert rule.weekday_mask == 0b0010101
     assert rule.holiday_keys == ()
@@ -73,10 +73,10 @@ def test_weekday_numbers_become_a_bitmask():
 
 
 def test_the_presets_round_trip_to_the_masks_they_name():
-    weekdays = build_day_rule(weekdays=["0", "1", "2", "3", "4"], holiday_keys=[],
+    weekdays = build_day_rule(mode="custom", weekdays=["0", "1", "2", "3", "4"], holiday_keys=[],
                               skip_public_holidays=False)
     assert weekdays.weekday_mask == holidays.WEEKDAYS
-    weekend = build_day_rule(weekdays=["5", "6"], holiday_keys=[],
+    weekend = build_day_rule(mode="custom", weekdays=["5", "6"], holiday_keys=[],
                              skip_public_holidays=False)
     assert weekend.weekday_mask == holidays.WEEKEND
 
@@ -84,33 +84,33 @@ def test_the_presets_round_trip_to_the_masks_they_name():
 @pytest.mark.parametrize("bad", ["7", "-1", "12"])
 def test_a_day_outside_the_week_is_refused(bad):
     with pytest.raises(FormError, match="day of the week"):
-        build_day_rule(weekdays=[bad], holiday_keys=[], skip_public_holidays=False)
+        build_day_rule(mode="custom", weekdays=[bad], holiday_keys=[], skip_public_holidays=False)
 
 
 def test_a_day_that_is_not_a_number_is_refused():
     with pytest.raises(FormError, match="not a day of the week"):
-        build_day_rule(weekdays=["monday"], holiday_keys=[], skip_public_holidays=False)
+        build_day_rule(mode="custom", weekdays=["monday"], holiday_keys=[], skip_public_holidays=False)
 
 
 def test_an_unknown_holiday_is_refused_rather_than_ignored():
     with pytest.raises(FormError, match="unknown holiday"):
-        build_day_rule(weekdays=["0"], holiday_keys=["thanksgiving"],
+        build_day_rule(mode="custom", weekdays=["0"], holiday_keys=["thanksgiving"],
                        skip_public_holidays=False)
 
 
 def test_duplicate_holiday_keys_collapse():
-    rule = build_day_rule(weekdays=["0"], holiday_keys=["christmas", "christmas"],
+    rule = build_day_rule(mode="custom", weekdays=["0"], holiday_keys=["christmas", "christmas"],
                           skip_public_holidays=False)
     assert rule.holiday_keys == ("christmas",)
 
 
 def test_a_rule_that_could_never_fire_is_refused():
     with pytest.raises(FormError, match="at least one day"):
-        build_day_rule(weekdays=[], holiday_keys=[], skip_public_holidays=False)
+        build_day_rule(mode="custom", weekdays=[], holiday_keys=[], skip_public_holidays=False)
 
 
 def test_holidays_alone_are_a_complete_rule():
-    rule = build_day_rule(weekdays=[], holiday_keys=["christmas"],
+    rule = build_day_rule(mode="custom", weekdays=[], holiday_keys=["christmas"],
                           skip_public_holidays=False)
     assert rule.weekday_mask == holidays.NO_DAYS
     assert rule.holiday_keys == ("christmas",)
@@ -118,20 +118,35 @@ def test_holidays_alone_are_a_complete_rule():
 
 def test_skip_is_dropped_when_there_is_no_weekday_to_subtract_from():
     """The form disables the switch in this state; a round trip must agree."""
-    rule = build_day_rule(weekdays=[], holiday_keys=["christmas"],
+    rule = build_day_rule(mode="custom", weekdays=[], holiday_keys=["christmas"],
                           skip_public_holidays=True)
     assert rule.skip_public_holidays is False
 
 
-def test_a_post_without_the_day_controls_means_every_day():
-    """A client that predates the feature must keep behaving as it did.
+@pytest.mark.parametrize("mode", ["all", "", "nonsense", None])
+def test_anything_but_custom_means_every_day(mode):
+    """`all` is the radio's other setting; the rest is defensive.
 
-    Unchecked boxes submit nothing, so "no days ticked" and "no day fields at
-    all" arrive identical on the wire. The form's hidden marker is what tells
-    them apart, and without it the answer is the old one.
+    A missing field is what a client written before this feature sends, and an
+    unrecognised one should not be able to invent a third behaviour. Both land
+    on what such a schedule has always done: every day, no holiday rule.
     """
-    rule = build_day_rule(weekdays=[], holiday_keys=[], skip_public_holidays=False,
-                          present=False)
+    rule = build_day_rule(mode=mode, weekdays=["0"], holiday_keys=["christmas"],
+                          skip_public_holidays=True)
     assert rule.weekday_mask == holidays.ALL_DAYS
     assert rule.holiday_keys == ()
     assert rule.skip_public_holidays is False
+
+
+def test_all_mode_ignores_whatever_the_modal_still_had_ticked():
+    """Switching to All discards the custom selection rather than hiding it.
+
+    The modal's fields are still in the DOM and still post, so the mode has to
+    be the thing that decides -- otherwise a schedule set back to All would
+    keep firing on a holiday nobody can see selected any more.
+    """
+    rule = build_day_rule(mode="all", weekdays=["5", "6"],
+                          holiday_keys=["christmas", "sinterklaas"],
+                          skip_public_holidays=True)
+    assert rule.weekday_mask == holidays.ALL_DAYS
+    assert rule.holiday_keys == ()

@@ -294,19 +294,27 @@ Both ends are inclusive.
 
 ### Days and holidays
 
-By default a schedule runs on **every day** inside its date range. This panel
-narrows that down.
+Two settings: **All** or **Custom**.
 
-**Days of the week.** Seven toggles, plus four presets that just tick boxes for
-you — *Every day*, *Weekdays · Mo–Fr*, *Weekend · Sa–Su*, *None*. There is no
-mode to be "in": change any single day afterwards and the schedule keeps
-working, the preset simply stops being highlighted.
+**All** is the default and means every day inside the date range — exactly what
+a schedule did before this existed. Most schedules never need anything else, so
+that is all the row shows.
+
+**Custom** opens a dialog with the detail, and the row then carries a one-line
+summary of it: *Mo–Fr · 2 holidays · skipping*. Reopen it any time by clicking
+that summary.
+
+Inside the dialog:
+
+**Days of the week.** Seven toggles, plus presets that just tick boxes for you
+— *Every day*, *Weekdays · Mo–Fr*, *Weekend · Sa–Su*, *None*. There is no mode
+to be "in": change a single day afterwards and the schedule keeps working, the
+preset simply stops being highlighted.
 
 **Belgian holidays.** Nineteen entries in three groups — the ten federal public
 holidays, three community days, and six observances (Sinterklaas, Halloween,
-Valentine's Day and so on). Tick the ones this schedule should fire on. The
-full list, with the date each one next falls on, is on the
-[Holidays](#holidays) page.
+Valentine's Day and so on). The full list, with the date each one next falls
+on, is on the [Holidays](#holidays) page.
 
 **The rule is a union.** A day matches when it is a ticked weekday **or** a
 ticked holiday:
@@ -317,9 +325,8 @@ ticked holiday:
 | Mo–Fr | Christmas Day | Monday to Friday, **and** Christmas — even when it falls on a Sunday |
 | none | Christmas Day, Sinterklaas | only those two days, whatever weekday they land on |
 
-That is the whole point of the union: "Mo–Fr plus Christmas" is what people
-actually want, and an intersection could not express it without ticking all
-seven days.
+That is the point of the union: "Mo–Fr plus Christmas" is what people actually
+want, and an intersection could not express it without ticking all seven days.
 
 **Skip public holidays.** The one subtraction, and the way to say *"Mo–Fr, but
 not on a public holiday"*. With it on, a day that matched **only because of its
@@ -333,12 +340,15 @@ Two things it deliberately does not do:
 - It only looks at the ten **public** holidays. Community days and observances
   never subtract anything — they only ever add a day when ticked.
 
-With no weekday ticked at all there is nothing for it to subtract from, so the
-switch is disabled rather than quietly ignored.
+With no weekday ticked there is nothing for it to subtract from, so the switch
+is disabled rather than quietly ignored.
 
-**A schedule needs at least one day or one holiday.** Ticking neither would
+**A custom rule needs at least one day or one holiday.** Ticking neither would
 create something that can never play, which is almost always a half-finished
 edit — use the **Enabled** switch to silence a schedule instead.
+
+Switching back to **All** discards the custom selection when you save. The
+dialog's fields are still there while the page is open, but *All* means all.
 
 ### Apply to
 

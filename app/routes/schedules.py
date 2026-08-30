@@ -25,6 +25,8 @@ from app.models import (
 from app.mp3_library import store_uploaded_mp3
 from app.schedule_form import (
     MAX_DELAY_SECONDS,
+    MODE_ALL,
+    MODE_CUSTOM,
     FormError,
     build_date_fields,
     build_day_rule,
@@ -182,6 +184,8 @@ def _make_router(*, kind: str, prefix: str, page: dict) -> APIRouter:
                 "weekday_labels": holidays.WEEKDAY_LABELS,
                 "weekday_names": holidays.WEEKDAY_NAMES,
                 "all_days_mask": holidays.ALL_DAYS,
+                "mode_all": MODE_ALL,
+                "mode_custom": MODE_CUSTOM,
                 "kind": kind,
                 "base_url": prefix,
                 "max_delay": MAX_DELAY_SECONDS,
@@ -211,15 +215,15 @@ def _make_router(*, kind: str, prefix: str, page: dict) -> APIRouter:
         weekdays: list[str] = Form(default=[]),
         holiday_keys: list[str] = Form(default=[]),
         skip_public_holidays: bool = Form(False),
-        day_rule: bool = Form(False),
+        day_mode: str = Form(""),
     ):
         fields = _validated(build_date_fields, start=start, end=end, recurring=recurring)
         fields |= _validated(
             build_time_window, all_day=all_day,
             start_time=start_time, end_time=end_time).as_fields()
         days = _validated(
-            build_day_rule, weekdays=weekdays, holiday_keys=holiday_keys,
-            skip_public_holidays=skip_public_holidays, present=day_rule)
+            build_day_rule, mode=day_mode, weekdays=weekdays,
+            holiday_keys=holiday_keys, skip_public_holidays=skip_public_holidays)
         fields |= days.as_fields()
         with session_scope() as db:
             if db.query(Schedule).filter(Schedule.name == name).first():
@@ -268,15 +272,15 @@ def _make_router(*, kind: str, prefix: str, page: dict) -> APIRouter:
         weekdays: list[str] = Form(default=[]),
         holiday_keys: list[str] = Form(default=[]),
         skip_public_holidays: bool = Form(False),
-        day_rule: bool = Form(False),
+        day_mode: str = Form(""),
     ):
         fields = _validated(build_date_fields, start=start, end=end, recurring=recurring)
         fields |= _validated(
             build_time_window, all_day=all_day,
             start_time=start_time, end_time=end_time).as_fields()
         days = _validated(
-            build_day_rule, weekdays=weekdays, holiday_keys=holiday_keys,
-            skip_public_holidays=skip_public_holidays, present=day_rule)
+            build_day_rule, mode=day_mode, weekdays=weekdays,
+            holiday_keys=holiday_keys, skip_public_holidays=skip_public_holidays)
         fields |= days.as_fields()
         with session_scope() as db:
             s = db.get(Schedule, schedule_id)

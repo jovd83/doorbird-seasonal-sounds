@@ -68,15 +68,17 @@ flowchart LR
   plays on every ring, never the same one twice running.
 - **Time-of-day windows** — optional `HH:MM` from/to per schedule, "all day" by
   default. Windows may wrap midnight (`22:00 → 02:00`).
-- **Days of the week** — per-schedule weekday toggles with Mo–Fr / Sa–Su
-  presets, editable straight from the schedule row.
+- **Days of the week** — each schedule is either *All days* or *Custom*; custom
+  opens a dialog with seven weekday toggles and Mo–Fr / Sa–Su presets, and the
+  row keeps a one-line summary of the result.
 - **Belgian holidays** — pick from the ten federal public holidays, three
   community days and six observances. A ticked holiday fires whatever weekday
   it lands on, and one switch expresses "Mo–Fr, but not on a public holiday".
   The five dates that move with Easter are computed once and stored a century
   ahead, so a ring never runs a date algorithm.
-- **Days of the week** — per-schedule weekday toggles with Mo–Fr / Sa–Su
-  presets, editable straight from the schedule row.
+- **Days of the week** — each schedule is either *All days* or *Custom*; custom
+  opens a dialog with seven weekday toggles and Mo–Fr / Sa–Su presets, and the
+  row keeps a one-line summary of the result.
 - **Belgian holidays** — pick from the ten federal public holidays, three
   community days and six observances. A ticked holiday fires whatever weekday
   it lands on, and one switch expresses "Mo–Fr, but not on a public holiday".

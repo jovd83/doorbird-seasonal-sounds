@@ -14,6 +14,11 @@ from app import holidays
 
 MINUTES_PER_DAY = 24 * 60
 
+# The two settings of the day-rule radio. `all` is the default a schedule
+# has always had; `custom` is what opens the day/holiday editor.
+MODE_ALL = "all"
+MODE_CUSTOM = "custom"
+
 # An auto response that waits longer than this is almost certainly a typo --
 # the visitor is long gone.
 MAX_DELAY_SECONDS = 3600
@@ -133,29 +138,30 @@ class DayRule:
 
 def build_day_rule(
     *,
+    mode: str,
     weekdays: list[str] | None,
     holiday_keys: list[str] | None,
     skip_public_holidays: bool,
-    present: bool = True,
 ) -> DayRule:
-    """Turn the seven day checkboxes and the holiday list into stored fields.
+    """Turn the day-mode radio and the modal's fields into stored fields.
 
-    The form posts weekday numbers rather than a mask, because seven checkboxes
-    named the same thing is what HTML gives you and reassembling them here beats
-    asking the browser for arithmetic.
+    `mode` is the row's "All / Custom" choice and doubles as the marker that
+    this submission carried the day controls at all. Anything other than
+    `custom` -- including a missing field, which is what a client written
+    before this feature sends -- means every day with no holiday rule, and
+    that is what such a schedule has always done.
 
-    `present` is the form's hidden marker saying the day controls were on the
-    page at all. Unchecked checkboxes submit nothing, so a post with no days
-    ticked and a post from a client that predates the whole feature arrive
-    looking identical -- and they mean opposite things. Without the marker the
-    answer is "every day", which is what such a schedule has always done.
+    On `custom` the seven day numbers and the holiday keys are read as posted.
+    The form sends weekday numbers rather than a mask because seven checkboxes
+    named the same thing is what HTML gives you, and reassembling them here
+    beats asking the browser for arithmetic.
 
-    With the marker, a rule that ticks no day and no holiday can never fire.
-    That is almost always a half-finished edit rather than an intent to silence
-    the schedule -- there is an Enabled switch for that -- so it is rejected
-    rather than saved as something that quietly never plays.
+    A custom rule that ticks no day and no holiday can never fire. That is
+    almost always a half-finished edit rather than an intent to silence the
+    schedule -- there is an Enabled switch for that -- so it is rejected rather
+    than saved as something that quietly never plays.
     """
-    if not present:
+    if (mode or "").strip().lower() != MODE_CUSTOM:
         return DayRule(weekday_mask=holidays.ALL_DAYS, holiday_keys=(),
                        skip_public_holidays=False)
 
@@ -169,7 +175,7 @@ def build_day_rule(
         except ValueError as exc:
             raise FormError(f"{text!r} is not a day of the week") from exc
         if not 0 <= index <= 6:
-            raise FormError(f"day of the week must be 0–6, got {index}")
+            raise FormError(f"day of the week must be 0-6, got {index}")
         mask |= 1 << index
 
     keys: list[str] = []
@@ -184,11 +190,11 @@ def build_day_rule(
 
     if not mask and not keys:
         raise FormError(
-            "pick at least one day of the week, or one holiday — "
+            "pick at least one day of the week, or one holiday - "
             "a schedule with neither could never play")
 
     # With no weekday ticked there is nothing for the skip to subtract from,
-    # and a stored true would be a trap: the form disables the switch in that
+    # and a stored true would be a trap: the modal disables the switch in that
     # state, so it must not survive a round trip either.
     return DayRule(
         weekday_mask=mask,

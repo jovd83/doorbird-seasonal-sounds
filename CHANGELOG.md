@@ -10,6 +10,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The day rule is now `All` / `Custom` with a dialog behind it.** Seven
+  weekday chips and a holiday disclosure in every table row was more furniture
+  than a column that usually just says "all days" deserves. The row now carries
+  two radios and a one-line summary — *Mo–Fr · 2 holidays · skipping* — and
+  everything else moved into a modal that opens when Custom is picked, or by
+  clicking the summary. The modal is driven by a checkbox, so it still opens
+  with scripting off, the same way the mobile "More" sheet does.
+- The form field is `day_mode` (`all` / `custom`) rather than the previous
+  hidden marker. Anything that is not `custom` — including the field being
+  absent, which is what a client written before this sends — means every day.
+- The inline-edit table is ~190px narrower again, since the Days column no
+  longer has to hold seven toggles.
+
 ### Fixed
 
 ### Removed
