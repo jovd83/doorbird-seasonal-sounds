@@ -104,7 +104,8 @@ chime will not play until it is restarted.
 - **Active sound** — what a ring would play right now, and why (the winning
   schedule, its priority and time window). Says *"none — staying silent"* when
   off-season silence is switched on.
-- **Auto response** — the spoken message due after the chime, and its wait, or
+- **Auto response** — the spoken message due after the chime, and its wait
+  (counted from the end of the chime, not from the button press), or
   *none scheduled right now*.
 - **Next change** — the exact **date and time** the chime next changes, how far
   off that is, and what it changes to. Because schedules can have time-of-day
@@ -290,6 +291,25 @@ windows, same per-device targeting, same priority rules — with one extra field
 **Seconds to wait once the chime has finished**, not since the button press.
 `0` speaks the message immediately after the chime. The maximum is 3600
 seconds; anything longer is almost certainly a typo.
+
+The clock starts when the chime's last sample has left for the device, so the
+message reaches the door speaker noticeably later than the interval alone
+suggests:
+
+    button press
+      + chime length
+      + wait interval
+      + transcoding, the first time an MP3 is played after being uploaded
+      = when the message is heard
+
+A 7-second chime with a 15-second wait speaks at roughly **T+22s**, not T+15s.
+
+> **Keep that total under about 30 seconds.** A DoorBird only plays transmitted
+> audio while the ring session it opened is still live — roughly as long as it
+> rings your phone. Past that the device still accepts the upload and still
+> answers `200`, so the audit log records it as played, but nothing comes out of
+> the speaker. If a message is logged `OK` and nobody heard it, this is the first
+> thing to check: shorten the wait, or pick a shorter chime.
 
 ### How it differs from a chime
 
@@ -534,5 +554,6 @@ entry, so the page is never blank without explanation.
 | Every connection fails after a move | `FERNET_KEY` does not match the one that encrypted the stored passwords. Restore the original key, or re-enter the device password. |
 | Webhook returns `404` | Wrong token, or the trigger mode is not *External trigger* / *Both*. |
 | A chime plays but no auto response | No auto-response schedule matches right now — they have no default fallback. Check the dashboard's *Auto response* line. |
+| Auto response logged `OK` but never heard | It reached the device after the post-ring audio window closed. `audio-transmit.cgi` answers `200` when it accepts the upload, not when it plays it, so the entry reads `OK` either way. Add the chime length to the wait interval and keep the total under ~30s. |
 | Cannot change an MP3's type | A schedule or a collection still points at it. Repoint that first. |
 | Cannot delete a collection | A schedule still uses it. Point that schedule at a single MP3 first. |
