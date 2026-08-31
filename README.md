@@ -112,7 +112,7 @@ flowchart LR
 <table>
 <tr>
 <td width="50%"><a href="screenshots/chime-schedules.png"><img src="screenshots/chime-schedules.png" alt="Chime schedules"></a></td>
-<td width="50%"><a href="screenshots/auto-responses.png"><img src="screenshots/auto-responses.png" alt="Auto-response schedules"></a></td>
+<td width="50%"><a href="screenshots/days-modal.png"><img src="screenshots/days-modal.png" alt="Days and holidays"></a></td>
 </tr>
 <tr>
 <td><b>Chime schedules.</b> Every row edits in place. Highest priority wins;
@@ -131,8 +131,8 @@ in-browser preview and the sample rate the door station expects.</td>
 one draws a different member on every ring.</td>
 </tr>
 <tr>
-<td><a href="screenshots/devices.png"><img src="screenshots/devices.png" alt="Devices"></a></td>
-<td><a href="screenshots/audit-log.png"><img src="screenshots/audit-log.png" alt="Audit log"></a></td>
+<td><a href="screenshots/auto-responses.png"><img src="screenshots/auto-responses.png" alt="Auto-response schedules"></a></td>
+<td><a href="screenshots/holidays.png"><img src="screenshots/holidays.png" alt="Belgian holidays"></a></td>
 </tr>
 <tr>
 <td><b>Devices.</b> Test, probe and play a chime on demand. Certificate

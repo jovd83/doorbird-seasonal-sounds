@@ -71,6 +71,31 @@ projects behave normally.
 The compose file here therefore uses **`env_file:`** instead, which injects
 `.env` straight into the container and needs no interpolation.
 
+## Updating to a new version
+
+The compose file bind-mounts `./app` over the copy inside the image, so what
+runs is the folder, not the image layer. That splits updates in two:
+
+| What changed | What to do |
+|---|---|
+| Anything under `app/` — Python, templates, CSS | Copy the folder across and **Restart**. No rebuild. |
+| `Dockerfile`, `requirements.txt`, `entrypoint.sh` | **Build**, which also restarts. |
+
+Two things worth knowing before you copy:
+
+- **Back up `data/doorbird.db` first**, and take `doorbird.db-wal` with it. The
+  database runs in WAL mode and stopping the container does *not* checkpoint
+  it, so a recent change can live entirely in the `-wal` file. A backup of the
+  `.db` alone can silently be hours out of date.
+- **A migration runs on the next start**, unattended, if the new version ships
+  one. Check the log for `Running upgrade` and for the app's `ready` line
+  before assuming it came up.
+
+Nothing in `app/` is read while the container runs, so copying the files is
+safe at any time — but note that the container will then pick the new code up
+on its *next* restart, whenever that happens, including one you did not ask
+for. Copy when you intend to deploy, not ahead of time.
+
 ## Verifying
 
 ```bash

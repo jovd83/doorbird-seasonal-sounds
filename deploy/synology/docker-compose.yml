@@ -1,35 +1,56 @@
-# Container Manager → Project → Create → point at this folder.
+# Synology Container Manager project.
 #
-# Differences from the repo-root compose file:
-#   * no `container_name`, so Container Manager owns the naming
-#   * an explicit build context, because the image is built on the NAS
-#     rather than pulled from a registry
-#   * host port taken from HOST_PORT so it can be changed without editing
-#     this file (DSM itself uses 5000/5001; 8088 is usually free)
+# This is the file that actually runs on a NAS, not a simplified example.
+# Three of its choices look odd out of context and are load-bearing:
+#
+#   1. No `${VAR}` substitution anywhere. Container Manager does not resolve a
+#      project-folder .env for interpolation, and the fail-fast `VAR:?msg` form
+#      makes DSM reject the whole project -- every id-based API call then
+#      returns error 2104 while other projects answer normally. Secrets go in
+#      .env and are injected with `env_file`, which needs no interpolation.
+#      That is also why the host port is written out rather than parameterised.
+#
+#   2. `user: "0:0"` with PUID/PGID 0. The data directory lives on an
+#      ACL-managed Synology share, owned by a DSM uid the container cannot
+#      write, so the entrypoint's "adopt the owner of /data" default fails
+#      there. Running as root sidesteps the permission check. The entrypoint
+#      already honours PUID/PGID, so this needs no image rebuild.
+#
+#   3. `./app` is bind-mounted over the copy baked into the image. Python
+#      changes then reach the container with a file copy and a restart, and
+#      only a change to the Dockerfile, requirements.txt or entrypoint.sh
+#      needs a real rebuild. The trade-off is that the image and the running
+#      code can drift apart -- the folder is what runs, so treat it as the
+#      deployed artifact and keep it in step with the tag you think you are on.
+#      Drop this line if you would rather the image be the single source of
+#      truth and rebuild on every change.
 services:
   doorbird-seasonal:
     build:
       context: .
       dockerfile: Dockerfile
     image: doorbird-seasonal:latest
+    container_name: doorbird-seasonal
     restart: unless-stopped
+    user: "0:0"
     ports:
-      - "${HOST_PORT:-8088}:8080"
+      # DSM occupies 5000/5001 and 80/443. Change both this and the base URL
+      # under Settings together.
+      - "3200:8080"
+    env_file:
+      - .env
     environment:
-      TZ: "${TZ:-Europe/Brussels}"
-      ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
-      ADMIN_PASSWORD: "${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}"
-      SECRET_KEY: "${SECRET_KEY:?set SECRET_KEY in .env}"
-      FERNET_KEY: "${FERNET_KEY:?set FERNET_KEY in .env}"
+      PUID: "0"
+      PGID: "0"
+      TZ: "Europe/Brussels"
       DATA_DIR: "/data"
-      DAILY_RUN_HOUR: "${DAILY_RUN_HOUR:-3}"
-      DAILY_RUN_MINUTE: "${DAILY_RUN_MINUTE:-15}"
-      RING_CHIME_ENABLED: "${RING_CHIME_ENABLED:-1}"
-      RING_DEBOUNCE_SECONDS: "${RING_DEBOUNCE_SECONDS:-8}"
-      CHIME_MAX_SECONDS: "${CHIME_MAX_SECONDS:-15}"
-      CHIME_GAIN_DB: "${CHIME_GAIN_DB:-0}"
+      RING_CHIME_ENABLED: "1"
+      RING_DEBOUNCE_SECONDS: "8"
+      CHIME_MAX_SECONDS: "15"
+      CHIME_GAIN_DB: "0"
     volumes:
       - ./data:/data
+      - ./app:/app/app:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
       interval: 30s

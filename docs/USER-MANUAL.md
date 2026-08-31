@@ -235,6 +235,8 @@ schedules currently use it.
 There is nothing to edit here. The catalogue is fixed, and the page exists to
 answer the one question the picker cannot: *when is that, exactly?*
 
+![Belgian holidays](../screenshots/holidays.png)
+
 ### Why five of them are stored
 
 Fourteen entries are a fixed date — 25 December is 25 December, and that is the
@@ -303,6 +305,8 @@ that is all the row shows.
 **Custom** opens a dialog with the detail, and the row then carries a one-line
 summary of it: *Mo–Fr · 2 holidays · skipping*. Reopen it any time by clicking
 that summary.
+
+![The days and holidays dialog](../screenshots/days-modal.png)
 
 Inside the dialog:
 
