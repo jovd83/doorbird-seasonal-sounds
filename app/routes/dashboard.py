@@ -63,8 +63,21 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
                              and resolution.schedule is None
                              and not settings_store.play_default_when_idle()),
             "ring_status": ring.status(),
+            # Read off the devices rather than the watchers: a ring arriving
+            # by webhook never touches a watcher, and in external-trigger mode
+            # there are none running at all.
+            "last_ring_device": _last_ring_device(devices),
+            # Keyed by device id so the listener rows can show a ring time
+            # without `status()` having to open a session of its own.
+            "last_rings": {d.id: d.last_ring_at for d in devices},
         },
     )
+
+
+def _last_ring_device(devices: list[Device]) -> Device | None:
+    """Whichever device rang most recently, or None if none ever has."""
+    rung = [d for d in devices if d.last_ring_at is not None]
+    return max(rung, key=lambda d: d.last_ring_at) if rung else None
 
 
 def _next_change(

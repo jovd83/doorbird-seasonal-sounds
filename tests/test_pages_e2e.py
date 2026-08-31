@@ -12,6 +12,7 @@ import re
 import pytest
 from sqlalchemy import delete
 
+from app import holidays
 from app.db import init_db, session_scope
 from app.main import app
 from app.models import (
@@ -172,6 +173,85 @@ def test_creating_an_auto_response_keeps_the_wait(client):
         s = db.query(Schedule).filter(Schedule.name == "parcel").one()
         assert s.kind == KIND_AUTO_RESPONSE
         assert s.delay_seconds == 12
+
+
+def test_holidays_mode_stores_the_holidays_and_nothing_else(client):
+    """The Dates column is an exclusive choice of three, and this is one."""
+    mp3_id = _upload(client, "holiday-clip")
+    r = client.post("/schedules/create", data={
+        "name": "kerst", "mp3_id": str(mp3_id), "all_day": "true",
+        "date_mode": "holidays",
+        "holiday_keys": ["christmas", "second_christmas"],
+        # Posted, and deliberately ignored: the Days control is greyed out in
+        # this mode and the matcher does not consult the mask.
+        "day_mode": "custom", "weekdays": ["0"],
+    }, follow_redirects=False)
+    assert r.status_code == 303, r.text
+    with session_scope() as db:
+        s = db.query(Schedule).filter(Schedule.name == "kerst").one()
+        assert s.date_mode_key == holidays.DATE_HOLIDAYS
+        assert s.holiday_keys == frozenset({"christmas", "second_christmas"})
+        assert s.weekday_mask == holidays.ALL_DAYS
+        assert s.is_holidays_mode
+        assert s.date_summary == "Christmas Day, 2nd Christmas"
+
+
+def test_holidays_mode_needs_a_holiday(client):
+    mp3_id = _upload(client, "empty-holidays")
+    r = client.post("/schedules/create", data={
+        "name": "nothing", "mp3_id": str(mp3_id), "all_day": "true",
+        "date_mode": "holidays",
+    }, follow_redirects=False)
+    assert r.status_code == 400
+
+
+def test_always_mode_drops_the_calendar_window(client):
+    mp3_id = _upload(client, "always-clip")
+    r = client.post("/schedules/create", data={
+        "name": "altijd", "start": "2026-12-20", "end": "2027-01-06",
+        "recurring": "true", "mp3_id": str(mp3_id), "all_day": "true",
+        "date_mode": "always",
+    }, follow_redirects=False)
+    assert r.status_code == 303, r.text
+    with session_scope() as db:
+        s = db.query(Schedule).filter(Schedule.name == "altijd").one()
+        assert s.date_mode_key == holidays.DATE_ALWAYS
+        assert (s.start_month, s.start_day) == (1, 1)
+        assert s.date_summary == "Always"
+
+
+def test_a_range_does_not_store_holidays(client):
+    """Exclusive means exclusive: a stored tick a range ignores is a trap."""
+    mp3_id = _upload(client, "range-clip")
+    r = client.post("/schedules/create", data={
+        "name": "interval", "start": "2026-12-20", "end": "2027-01-06",
+        "recurring": "true", "mp3_id": str(mp3_id), "all_day": "true",
+        "date_mode": "range", "holiday_keys": ["christmas"],
+    }, follow_redirects=False)
+    assert r.status_code == 303, r.text
+    with session_scope() as db:
+        s = db.query(Schedule).filter(Schedule.name == "interval").one()
+        assert s.date_mode_key == holidays.DATE_RANGE
+        assert s.holiday_keys == frozenset()
+        assert s.date_summary == "20 Dec – 6 Jan"
+
+
+def test_the_schedules_page_offers_both_editors(client):
+    """Two columns, two modals -- dates carries the holidays, days the rest."""
+    mp3_id = _upload(client, "two-modals")
+    client.post("/schedules/create", data={
+        "name": "split-ui", "start": "2026-12-01", "recurring": "true",
+        "mp3_id": str(mp3_id), "all_day": "true"}, follow_redirects=False)
+
+    page = client.get("/schedules").text
+    with session_scope() as db:
+        sid = db.query(Schedule).filter(Schedule.name == "split-ui").one().id
+
+    assert f'id="holmodal_{sid}"' in page
+    assert f'id="daymodal_{sid}"' in page
+    # 2nd Christmas is offered, and the totals know the catalogue grew.
+    assert "2nd Christmas" in page
+    assert f"0 of {len(holidays.HOLIDAYS)} selected" in page
 
 
 def test_a_chime_schedule_refuses_an_auto_response_clip(client):
@@ -383,20 +463,18 @@ def test_no_page_loads_an_external_stylesheet(client):
 # ------------------------------------------------- days and holidays, end to end
 
 
-def test_a_schedule_can_be_given_weekdays_and_holidays(client):
+def test_a_schedule_can_be_given_weekdays(client):
     mp3_id = _upload(client, "weekday-bell")
     r = client.post("/schedules/create", data={
         "name": "office-hours", "start": "2026-01-01", "end": "2026-12-31",
         "recurring": "true", "mp3_id": str(mp3_id), "all_day": "true",
         "day_mode": "custom",
         "weekdays": ["0", "1", "2", "3", "4"],
-        "holiday_keys": ["christmas", "sinterklaas"],
     }, follow_redirects=False)
     assert r.status_code == 303, r.text
     with session_scope() as db:
         s = db.query(Schedule).filter(Schedule.name == "office-hours").one()
         assert s.weekday_mask == 0b0011111
-        assert s.holiday_keys == {"christmas", "sinterklaas"}
         assert s.skip_public_holidays is False
         assert s.days_label == "Mo–Fr"
 
@@ -416,13 +494,16 @@ def test_the_skip_toggle_survives_a_round_trip(client):
         assert s.holiday_keys == frozenset()
 
 
-def test_editing_a_schedule_can_clear_every_holiday(client):
-    """delete-orphan on the association, so unticking really removes rows."""
+def test_leaving_holidays_mode_clears_the_stored_holidays(client):
+    """delete-orphan on the association, so the rows really go.
+
+    Leaving them would be a trap: invisible while the mode is a range, then
+    springing back into effect if it were ever switched to Holidays again.
+    """
     mp3_id = _upload(client, "clearable")
     client.post("/schedules/create", data={
-        "name": "clearme", "start": "2026-01-01", "end": "2026-12-31",
-        "recurring": "true", "mp3_id": str(mp3_id), "all_day": "true",
-        "day_mode": "custom", "weekdays": ["0"], "holiday_keys": ["christmas"],
+        "name": "clearme", "mp3_id": str(mp3_id), "all_day": "true",
+        "date_mode": "holidays", "holiday_keys": ["christmas"],
     }, follow_redirects=False)
     with session_scope() as db:
         sched = db.query(Schedule).filter(Schedule.name == "clearme").one()
@@ -432,6 +513,7 @@ def test_editing_a_schedule_can_clear_every_holiday(client):
     r = client.post(f"/schedules/{schedule_id}/update", data={
         "name": "clearme", "start": "2026-01-01", "end": "2026-12-31",
         "recurring": "true", "mp3_id": str(mp3_id), "all_day": "true",
+        "date_mode": "range",
         "day_mode": "custom", "weekdays": ["0", "1"],
     }, follow_redirects=False)
     assert r.status_code == 303, r.text
@@ -483,9 +565,8 @@ def test_an_unknown_holiday_key_is_rejected(client):
 def test_the_holidays_page_lists_the_catalogue_and_its_users(client):
     mp3_id = _upload(client, "xmas-only")
     client.post("/schedules/create", data={
-        "name": "just-xmas", "start": "2026-01-01", "end": "2026-12-31",
-        "recurring": "true", "mp3_id": str(mp3_id), "all_day": "true",
-        "day_mode": "custom", "holiday_keys": ["christmas"],
+        "name": "just-xmas", "mp3_id": str(mp3_id), "all_day": "true",
+        "date_mode": "holidays", "holiday_keys": ["christmas"],
     }, follow_redirects=False)
 
     r = client.get("/holidays")

@@ -52,12 +52,56 @@ def test_easter_stays_inside_its_calendar_window():
 
 
 def test_the_catalogue_is_what_was_asked_for():
-    assert len(holidays.HOLIDAYS) == 19
+    assert len(holidays.HOLIDAYS) == 20
     assert len(holidays.PUBLIC_KEYS) == 10
     assert len([h for h in holidays.HOLIDAYS
                 if h.group == holidays.GROUP_COMMUNITY]) == 3
     assert len([h for h in holidays.HOLIDAYS
-                if h.group == holidays.GROUP_OBSERVANCE]) == 6
+                if h.group == holidays.GROUP_OBSERVANCE]) == 7
+
+
+def test_boxing_day_is_an_observance_not_a_belgian_public_holiday():
+    """26 December is federal in NL and DE, but not here.
+
+    Filing it under GROUP_PUBLIC would silently widen "skip public holidays",
+    which is the one group that can *remove* a day from a schedule.
+    """
+    second = holidays.BY_KEY["second_christmas"]
+    assert (second.month, second.day) == (12, 26)
+    assert second.group == holidays.GROUP_OBSERVANCE
+    assert "second_christmas" not in holidays.PUBLIC_KEYS
+
+
+# ------------------------------------------------------- name summarising
+
+
+def test_a_list_that_fits_is_shown_whole():
+    assert holidays.summarise_names(["Christmas Day", "Sinterklaas"]) == (
+        "Christmas Day, Sinterklaas")
+
+
+def test_an_overlong_list_folds_the_tail_into_a_count():
+    out = holidays.summarise_names(
+        ["New Year's Day", "Easter Monday", "Labour Day", "Ascension Day"])
+    assert out == "New Year's Day, Easter Monday and 2 others"
+
+
+def test_one_left_over_is_singular():
+    out = holidays.summarise_names(
+        ["German-speaking Community", "Flemish Community", "French Community"],
+        budget=30)
+    assert out.endswith(" and 2 others")
+
+
+def test_at_least_one_name_survives_however_long_it_is():
+    """A bare 'and 3 others' would name nothing at all."""
+    out = holidays.summarise_names(
+        ["German-speaking Community", "Flemish Community"], budget=5)
+    assert out == "German-speaking Community and 1 other"
+
+
+def test_an_empty_selection_summarises_to_nothing():
+    assert holidays.summarise_names([]) == ""
 
 
 def test_keys_are_unique_and_every_entry_has_exactly_one_rule():

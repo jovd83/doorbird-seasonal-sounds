@@ -228,7 +228,7 @@ delivery message.
 
 ## Holidays
 
-A read-only reference: the nineteen Belgian holidays a schedule can pick from,
+A read-only reference: the twenty Belgian holidays a schedule can pick from,
 grouped, each with the rule it follows, the date it **next** falls on, and which
 schedules currently use it.
 
@@ -276,12 +276,33 @@ absence of a fallback differ.
 
 ### Name and dates
 
+The **Dates** column is one choice out of three. They are mutually exclusive —
+a schedule uses exactly one of them:
+
+| Mode | Fires on | Use it for |
+|---|---|---|
+| **Always** | every date | a rule that runs all year and is narrowed by *Days* alone |
+| **Date interval** | a calendar window | seasons — Christmas, summer, a holiday week |
+| **Holidays** | the ticked Belgian holidays, and nothing else | a single named day, whatever weekday it lands on |
+
+**Date interval** is the default and is what every schedule made before this
+existed uses.
+
 - **Start** / **End** — the calendar window. Leave End blank for a single day.
 - **Recurring annually** — ignores the year, matching only month/day. This is
   what you want for Christmas or a birthday.
 - Ranges may **wrap year-end**: `12-20 → 01-06` covers Christmas and New Year.
+
+Outside the Dates column:
+
 - **Priority** — higher wins when several schedules match.
 - **Enabled** — untick to park a schedule without deleting it.
+
+> Holidays used to be an *addition* to a mandatory date range rather than an
+> alternative to one, which made "only on Christmas" impossible to say without
+> also inventing a range that happened to contain it. Making the three
+> exclusive is what fixed that. A schedule that had both kept its range and
+> lost the tick, since inside an already-covered range the tick did nothing.
 
 ### Time of day
 
@@ -294,19 +315,44 @@ absence of a fallback differ.
 
 Both ends are inclusive.
 
-### Days and holidays
+### Holidays — one of the three date modes
+
+Picking **Holidays** replaces the date range: the schedule fires on the ticked
+days and no others. The row names what you picked — *Christmas Day*, or
+*Christmas Day, Sinterklaas* — and clicking it opens the picker.
+
+Long selections are trimmed to fit the column, with the tail folded into a
+count: *New Year's Day, Easter Monday and 3 others*. At least one name always
+survives, however long it is, because a bare "and 4 others" names nothing. The
+dialog's own footer never trims — it has the room, and it is where you are
+choosing them.
+
+**Belgian holidays.** Twenty entries in three groups — the ten federal public
+holidays, three community days, and seven observances (Sinterklaas, Halloween,
+Valentine's Day, 2nd Christmas and so on). The full list, with the date each
+one next falls on, is on the [Holidays](#holidays) page.
+
+A ticked holiday fires **whatever weekday it lands on**. The **Days** column
+does not apply in this mode and is greyed out to say so — you have already
+named the exact days you want, and a weekday rule could only take one away.
+Its stored setting is kept, so it comes back if you switch modes again.
+
+> **2nd Christmas** (26 December) is listed as an *observance*, not a public
+> holiday. It is federal in the Netherlands and Germany but not in Belgium, and
+> only the public group is what *skip public holidays* subtracts — filing it
+> there would quietly start dropping Boxing Day from every Mo–Fr schedule.
+
+### Days of the week
 
 Two settings: **All** or **Custom**.
 
-**All** is the default and means every day inside the date range — exactly what
-a schedule did before this existed. Most schedules never need anything else, so
-that is all the row shows.
+**All** is the default and means every day inside the date range. Most
+schedules never need anything else, so that is all the row shows.
 
-**Custom** opens a dialog with the detail, and the row then carries a one-line
-summary of it: *Mo–Fr · 2 holidays · skipping*. Reopen it any time by clicking
-that summary.
+**Custom** opens a dialog and the row then carries a one-line summary of it:
+*Mo–Fr · skipping*. Reopen it any time by clicking that summary.
 
-![The days and holidays dialog](../screenshots/days-modal.png)
+![The days dialog](../screenshots/days-modal.png)
 
 Inside the dialog:
 
@@ -315,22 +361,20 @@ Inside the dialog:
 to be "in": change a single day afterwards and the schedule keeps working, the
 preset simply stops being highlighted.
 
-**Belgian holidays.** Nineteen entries in three groups — the ten federal public
-holidays, three community days, and six observances (Sinterklaas, Halloween,
-Valentine's Day and so on). The full list, with the date each one next falls
-on, is on the [Holidays](#holidays) page.
+**Days narrows the dates.** In *Always* and *Date interval* the weekday rule
+is applied on top of the date rule — both have to hold:
 
-**The rule is a union.** A day matches when it is a ticked weekday **or** a
-ticked holiday:
-
-| Days | Holidays | Fires on |
+| Dates | Days | Fires on |
 |---|---|---|
-| Mo–Fr | — | Monday to Friday, whatever the date |
-| Mo–Fr | Christmas Day | Monday to Friday, **and** Christmas — even when it falls on a Sunday |
-| none | Christmas Day, Sinterklaas | only those two days, whatever weekday they land on |
+| Always | Mo–Fr | every Monday to Friday of the year |
+| 20 Dec – 6 Jan | Mo–Fr | weekdays inside that window only |
+| 20 Dec – 6 Jan | Every day | every day inside that window |
+| Holidays: Christmas Day | *ignored* | 25 December, whatever weekday it is |
 
-That is the point of the union: "Mo–Fr plus Christmas" is what people actually
-want, and an intersection could not express it without ticking all seven days.
+To get "Mo–Fr, **and** Christmas whenever it falls", use two schedules: a
+weekday one, and a Holidays one at a higher priority. That is more typing than
+the old combined rule, and it is also the only version whose behaviour you can
+read off the row.
 
 **Skip public holidays.** The one subtraction, and the way to say *"Mo–Fr, but
 not on a public holiday"*. With it on, a day that matched **only because of its
@@ -347,12 +391,16 @@ Two things it deliberately does not do:
 With no weekday ticked there is nothing for it to subtract from, so the switch
 is disabled rather than quietly ignored.
 
-**A custom rule needs at least one day or one holiday.** Ticking neither would
-create something that can never play, which is almost always a half-finished
-edit — use the **Enabled** switch to silence a schedule instead.
+**A custom rule needs at least one day.** Ticking none would create something
+that can never play, which is almost always a half-finished edit — use the
+**Enabled** switch to silence a schedule instead. The same applies to
+**Holidays** mode with nothing ticked.
 
-Switching back to **All** discards the custom selection when you save. The
-dialog's fields are still there while the page is open, but *All* means all.
+Switching back to **All** discards the weekday selection when you save: the
+dialog's fields are still there while the page is open, but *All* means all
+seven days with nothing skipped. It leaves the **holidays alone** — those are a
+different control in a different column, still visible on the row, and throwing
+away a choice you can see would be a surprise.
 
 ### Apply to
 

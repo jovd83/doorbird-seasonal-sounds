@@ -1,6 +1,6 @@
 """Keeping a century of moveable holiday dates on disk.
 
-Five of the nineteen holidays move with Easter. `app.holidays` can compute any
+Five of the twenty holidays move with Easter. `app.holidays` can compute any
 of them from any year, and the resolver does exactly that -- but "when is
 Easter Monday in 2071" is a question the reference page has to answer for a
 hundred rows at a time, and computing a century of them on every page render

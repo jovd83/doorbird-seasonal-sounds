@@ -1,6 +1,6 @@
 """The holiday reference page.
 
-Read-only on purpose: the nineteen entries are a catalogue in code, not user
+Read-only on purpose: the twenty entries are a catalogue in code, not user
 data. What this page is actually for is answering "when is that, then?" — the
 five holidays that move with Easter have no date you can read off a rule, and
 before this page the only way to find out was to trust the picker.
@@ -27,7 +27,7 @@ async def holiday_list(request: Request, db: Session = Depends(get_db)):
     next_dates = holiday_store.next_dates(db, today)
 
     # Which schedules point at each holiday, so the page can say whether an
-    # entry is actually in use rather than just listing all nineteen.
+    # entry is actually in use rather than just listing all twenty.
     used: dict[str, list[str]] = {}
     rows = (
         db.query(ScheduleHoliday.holiday_key, Schedule.name)

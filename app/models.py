@@ -69,6 +69,12 @@ class Device(Base):
     last_applied_mp3_id: Mapped[int | None] = mapped_column(ForeignKey("mp3_files.id"), nullable=True)
     last_applied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # When this device last reported a ring, from whichever trigger source.
+    # Stored rather than held on the watcher thread: the dashboard's headline
+    # figure used to live in memory, so every restart reset it to "no rings
+    # yet" while the audit log still listed the rings, and a ring arriving by
+    # webhook never reached a watcher at all so it never showed up.
+    last_ring_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_local)
 
 
@@ -134,6 +140,15 @@ class Schedule(Base):
     mp3_id: Mapped[int] = mapped_column(ForeignKey("mp3_files.id"))
     collection_id: Mapped[int | None] = mapped_column(
         ForeignKey("mp3_collections.id"), nullable=True)
+    # Which of the three exclusive date rules applies: no restriction, the
+    # month/day window below, or the ticked holidays. Everything written
+    # before this column existed had a mandatory window, so `range` is the
+    # default and the upgrade changes nothing about when a doorbell sounds.
+    date_mode: Mapped[str] = mapped_column(
+        String(20), default=holidays.DATE_RANGE,
+        server_default=holidays.DATE_RANGE)
+    # Only read in `range` mode. Kept NOT NULL and populated in every mode so
+    # switching back and forth does not lose the dates someone typed.
     start_month: Mapped[int] = mapped_column(Integer)
     start_day: Mapped[int] = mapped_column(Integer)
     end_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -207,36 +222,54 @@ class Schedule(Base):
         return holidays.describe_days(self.weekday_mask)
 
     @property
-    def is_all_days(self) -> bool:
-        """True when the schedule has no day rule worth showing.
+    def date_mode_key(self) -> str:
+        """The stored mode, with anything unrecognised reading as a range."""
+        return holidays.effective_date_mode(self.date_mode)
 
-        Drives which way the row's All/Custom radio sits. Deliberately not a
-        stored column: 'all days, no holidays, nothing skipped' is a state the
-        other three fields already describe, and a fourth field saying the
-        same thing is a fourth field that can disagree with them.
+    @property
+    def is_holidays_mode(self) -> bool:
+        """True when the ticked holidays are the whole date rule.
+
+        The Days control is inert in this state -- `matches_day` returns True
+        without consulting the mask -- so the row greys it out rather than
+        showing a rule nothing honours.
+        """
+        return self.date_mode_key == holidays.DATE_HOLIDAYS
+
+    @property
+    def is_every_weekday(self) -> bool:
+        """True when the *weekday* rule is the default one.
+
+        Drives which way the Days column's All/Custom radio sits, so it asks
+        only about what that column owns: the seven weekdays and the skip.
+        Holidays are deliberately not consulted -- they are edited in the
+        Dates column, and a schedule that fires every weekday plus Christmas
+        still has a default weekday rule.
+
+        Not a stored column: 'every weekday, nothing skipped' is a state the
+        other two fields already describe, and a third field saying the same
+        thing is a third field that can disagree with them.
         """
         return (
             holidays.effective_mask(self.weekday_mask) == holidays.ALL_DAYS
-            and not self.holiday_keys
             and not self.skip_public_holidays
         )
 
     @property
     def day_summary(self) -> str:
-        """'Mo–Fr · 2 holidays · skipping' — the row's one-line day rule.
+        """'Mo–Fr · skipping' — what the Days cell says.
 
-        The modal's script rebuilds this same string as you edit, so the two
+        Weekdays only. The holidays moved to the Dates column and are
+        summarised by `holiday_summary`, so this string and that one describe
+        two separate controls and must not both claim the same fact.
+
+        The editor's script rebuilds this same string as you edit, so the two
         have to agree; keeping the server's version here rather than in the
         template is what makes that pair checkable.
         """
-        if self.is_all_days:
+        if self.is_every_weekday:
             return "Every day"
         parts = [holidays.describe_days(self.weekday_mask)]
-        names = self.holiday_names
-        if len(names) == 1:
-            parts.append(names[0])
-        elif names:
-            parts.append(f"{len(names)} holidays")
         if self.skip_public_holidays and holidays.effective_mask(self.weekday_mask):
             parts.append("skipping")
         return " · ".join(parts)
@@ -247,17 +280,30 @@ class Schedule(Base):
 
     @property
     def holiday_summary(self) -> str:
-        """What the row's collapsed holiday control says.
+        """What the Dates cell says when the mode is Holidays.
 
         Names the holiday outright when there is only one -- 'Christmas Day'
-        reads, '1 holiday' does not -- and mentions the skip only when it is
-        actually doing something.
+        reads, '1 holiday' does not. Says nothing about the skip: that lives
+        in the Days column now, and is reported by `day_summary`.
         """
         chosen = self.holiday_names
         if not chosen:
-            return "None · skipping holidays" if self.skip_public_holidays else "No holidays"
-        label = chosen[0] if len(chosen) == 1 else f"{len(chosen)} holidays"
-        return f"{label} · skipping" if self.skip_public_holidays else label
+            return "No holidays"
+        return holidays.summarise_names(chosen)
+
+    @property
+    def date_summary(self) -> str:
+        """One line for the Dates cell, whichever of the three modes is on."""
+        mode = self.date_mode_key
+        if mode == holidays.DATE_ALWAYS:
+            return "Always"
+        if mode == holidays.DATE_HOLIDAYS:
+            return self.holiday_summary
+        end_m = self.end_month or self.start_month
+        end_d = self.end_day or self.start_day
+        start = holidays.short_date(self.start_month, self.start_day)
+        end = holidays.short_date(end_m, end_d)
+        return start if start == end else f"{start} – {end}"
 
     @property
     def all_day(self) -> bool:
@@ -285,7 +331,7 @@ class ScheduleHoliday(Base):
     """One holiday a schedule fires on, whatever weekday it lands on.
 
     The key is a catalogue constant from `app.holidays`, not a foreign key:
-    the nineteen entries are code, not data, so there is no table for them to
+    the twenty entries are code, not data, so there is no table for them to
     point at and nothing for a user to add or rename.
     """
 

@@ -68,22 +68,19 @@ flowchart LR
   plays on every ring, never the same one twice running.
 - **Time-of-day windows** — optional `HH:MM` from/to per schedule, "all day" by
   default. Windows may wrap midnight (`22:00 → 02:00`).
+- **Three ways to say *when*** — a schedule's Dates column is *Always*, a
+  *Date interval*, or a set of *Holidays*, and exactly one of them applies.
+  Picking Holidays is how you say "only on Christmas" without inventing a date
+  range that happens to contain it.
 - **Days of the week** — each schedule is either *All days* or *Custom*; custom
-  opens a dialog with seven weekday toggles and Mo–Fr / Sa–Su presets, and the
-  row keeps a one-line summary of the result.
-- **Belgian holidays** — pick from the ten federal public holidays, three
-  community days and six observances. A ticked holiday fires whatever weekday
-  it lands on, and one switch expresses "Mo–Fr, but not on a public holiday".
-  The five dates that move with Easter are computed once and stored a century
-  ahead, so a ring never runs a date algorithm.
-- **Days of the week** — each schedule is either *All days* or *Custom*; custom
-  opens a dialog with seven weekday toggles and Mo–Fr / Sa–Su presets, and the
-  row keeps a one-line summary of the result.
-- **Belgian holidays** — pick from the ten federal public holidays, three
-  community days and six observances. A ticked holiday fires whatever weekday
-  it lands on, and one switch expresses "Mo–Fr, but not on a public holiday".
-  The five dates that move with Easter are computed once and stored a century
-  ahead, so a ring never runs a date algorithm.
+  opens a dialog with seven weekday toggles and Mo–Fr / Sa–Su presets, plus the
+  switch that expresses "Mo–Fr, but not on a public holiday". The row keeps a
+  one-line summary of the result.
+- **Belgian holidays** — twenty entries in three groups: the ten federal public
+  holidays, three community days and seven observances. A ticked holiday fires
+  whatever weekday it lands on. The five dates that move with Easter are
+  computed once and stored a century ahead, so a ring never runs a date
+  algorithm.
 - **Per-device targeting** — a schedule can apply to selected door stations, or
   to all of them.
 - **Priority and specificity** — highest priority wins; ties go to the more
@@ -112,7 +109,7 @@ flowchart LR
 <table>
 <tr>
 <td width="50%"><a href="screenshots/chime-schedules.png"><img src="screenshots/chime-schedules.png" alt="Chime schedules"></a></td>
-<td width="50%"><a href="screenshots/days-modal.png"><img src="screenshots/days-modal.png" alt="Days and holidays"></a></td>
+<td width="50%"><a href="screenshots/days-modal.png"><img src="screenshots/days-modal.png" alt="The days dialog"></a></td>
 </tr>
 <tr>
 <td><b>Chime schedules.</b> Every row edits in place. Highest priority wins;

@@ -48,6 +48,7 @@ def _sched(**kw) -> Schedule:
         "delay_seconds": 0,
         "weekday_mask": holidays.ALL_DAYS,
         "skip_public_holidays": False,
+        "date_mode": holidays.DATE_RANGE,
     }
     fields.update(kw)
     s = Schedule(**fields)
@@ -90,25 +91,40 @@ def test_weekend_preset_is_the_complement():
 # -------------------------------------------------- holidays widen the match
 
 
-def test_a_ticked_holiday_fires_whatever_weekday_it_lands_on():
-    """The point of the OR: Sinterklaas 2026 is a Sunday and still applies."""
-    s = _sched(weekday_mask=holidays.WEEKDAYS, holiday_keys=("sinterklaas",))
-    assert not matches_day(s, SUN_30_AUG)   # an ordinary Sunday, excluded
-    assert matches_day(s, SUN_6_DEC)        # the same weekday, but ticked
+def test_holidays_mode_ignores_the_weekday_rule_entirely():
+    """The mode names the exact days; a weekday rule could only remove one.
 
-
-def test_a_holiday_on_an_already_matching_weekday_changes_nothing():
-    s = _sched(weekday_mask=holidays.WEEKDAYS, holiday_keys=("christmas",))
-    assert matches_day(s, FRI_25_DEC)
-
-
-def test_holidays_only_never_fires_on_an_ordinary_day():
-    s = _sched(weekday_mask=holidays.NO_DAYS,
-               holiday_keys=("christmas", "sinterklaas"))
-    assert matches_day(s, FRI_25_DEC)
+    Sinterklaas 2026 falls on a Sunday. The stored mask still says Mo-Fr --
+    switching modes does not throw it away -- but nothing consults it here.
+    """
+    s = _sched(date_mode=holidays.DATE_HOLIDAYS,
+               weekday_mask=holidays.WEEKDAYS, holiday_keys=("sinterklaas",))
     assert matches_day(s, SUN_6_DEC)
-    assert not matches_day(s, MON_31_AUG)
-    assert not matches_day(s, WED_11_NOV)   # a holiday, but not a ticked one
+    # `matches_day` is unconditionally true in this mode; the holidays are
+    # what `matches_date` checks, so the pair is what decides.
+    assert matches_today(s, SUN_6_DEC)
+    assert not matches_today(s, SUN_30_AUG)
+
+
+def test_holidays_mode_never_fires_on_an_ordinary_day():
+    s = _sched(date_mode=holidays.DATE_HOLIDAYS,
+               holiday_keys=("christmas", "sinterklaas"))
+    assert matches_today(s, FRI_25_DEC)
+    assert matches_today(s, SUN_6_DEC)
+    assert not matches_today(s, MON_31_AUG)
+    assert not matches_today(s, WED_11_NOV)   # a holiday, but not a ticked one
+
+
+def test_a_range_schedule_ignores_its_holiday_ticks():
+    """The three modes are exclusive, so a range never consults them.
+
+    The rows are deleted by the migration, but a hand-edited database or an
+    older client could still present the pair, and the answer must not depend
+    on which one you look at.
+    """
+    s = _sched(date_mode=holidays.DATE_RANGE,
+               weekday_mask=holidays.WEEKDAYS, holiday_keys=("sinterklaas",))
+    assert not matches_day(s, SUN_6_DEC)
 
 
 # ------------------------------------------------------- the one subtraction
@@ -129,18 +145,20 @@ def test_skip_leaves_community_days_and_observances_alone():
     assert not holidays.is_public_holiday(THU_31_DEC)
 
 
-def test_an_explicitly_ticked_holiday_beats_the_skip():
-    """Otherwise a schedule could name Christmas and skip it in one breath."""
-    s = _sched(weekday_mask=holidays.WEEKDAYS, skip_public_holidays=True,
+def test_the_skip_is_inert_in_holidays_mode():
+    """Nothing matched by weekday there, so there is nothing to subtract.
+
+    It is also unreachable from the form -- the Days control is greyed out --
+    but a stored true must not be able to cancel the very day that was named.
+    """
+    s = _sched(date_mode=holidays.DATE_HOLIDAYS, skip_public_holidays=True,
                holiday_keys=("christmas",))
-    assert matches_day(s, FRI_25_DEC)
-    assert not matches_day(s, WED_11_NOV)   # still skipped: not ticked
+    assert matches_today(s, FRI_25_DEC)
 
 
 def test_skip_does_nothing_without_a_weekday_to_subtract_from():
-    s = _sched(weekday_mask=holidays.NO_DAYS, skip_public_holidays=True,
-               holiday_keys=("christmas",))
-    assert matches_day(s, FRI_25_DEC)
+    s = _sched(weekday_mask=holidays.NO_DAYS, skip_public_holidays=True)
+    assert not matches_day(s, FRI_25_DEC)
     assert not matches_day(s, MON_31_AUG)
 
 
@@ -165,11 +183,33 @@ def test_a_narrower_day_rule_wins_a_priority_tie():
     assert pick_schedule([every, weekdays], MON_31_AUG) is weekdays
 
 
-def test_a_holiday_only_schedule_outranks_a_weekday_one():
+def test_a_holidays_mode_schedule_outranks_a_weekday_one():
     weekdays = _sched(id=1, name="weekdays", weekday_mask=holidays.WEEKDAYS)
-    xmas = _sched(id=2, name="xmas", weekday_mask=holidays.NO_DAYS,
+    xmas = _sched(id=2, name="xmas", date_mode=holidays.DATE_HOLIDAYS,
                   holiday_keys=("christmas",))
     assert pick_schedule([weekdays, xmas], FRI_25_DEC) is xmas
+
+
+def test_always_loses_a_tie_to_a_real_range():
+    """`always` is the widest window there is, so it is the least specific."""
+    everywhere = _sched(id=1, name="always", date_mode=holidays.DATE_ALWAYS)
+    december = _sched(id=2, name="dec", date_mode=holidays.DATE_RANGE,
+                      start_month=12, start_day=1, end_month=12, end_day=31)
+    assert pick_schedule([everywhere, december], FRI_25_DEC) is december
+
+
+def test_always_matches_any_date_at_all():
+    s = _sched(date_mode=holidays.DATE_ALWAYS,
+               start_month=12, start_day=25, end_month=12, end_day=25)
+    assert matches_today(s, MON_31_AUG)
+    assert matches_today(s, FRI_25_DEC)
+
+
+def test_always_still_honours_the_weekday_rule():
+    """Unlike holidays mode, `always` leaves the Days control live."""
+    s = _sched(date_mode=holidays.DATE_ALWAYS, weekday_mask=holidays.WEEKDAYS)
+    assert matches_today(s, MON_31_AUG)
+    assert not matches_today(s, SUN_30_AUG)
 
 
 def test_priority_still_outranks_specificity():
@@ -214,14 +254,18 @@ def test_the_next_change_is_found_at_a_day_boundary():
     ({"weekday_mask": holidays.WEEKEND}, "Sa–Su"),
     ({"weekday_mask": holidays.WEEKDAYS, "skip_public_holidays": True},
      "Mo–Fr, not on public holidays"),
-    # Every day is already ticked, so the holiday cannot add anything.
+    # A range never consults its holiday ticks, so they say nothing here.
     ({"holiday_keys": ("christmas",)}, ""),
     ({"skip_public_holidays": True, "holiday_keys": ("christmas",)},
-     "Every day, not on public holidays, plus Christmas Day"),
+     "Every day, not on public holidays"),
     ({"weekday_mask": holidays.WEEKDAYS, "holiday_keys": ("christmas", "sinterklaas")},
-     "Mo–Fr, plus Christmas Day, Sinterklaas"),
-    ({"weekday_mask": holidays.NO_DAYS, "holiday_keys": ("christmas", "sinterklaas")},
+     "Mo–Fr"),
+    # In holidays mode the days *are* the holidays, so they are the sentence
+    # -- and the stored weekday mask is not mentioned, because nothing reads it.
+    ({"date_mode": holidays.DATE_HOLIDAYS, "weekday_mask": holidays.WEEKDAYS,
+      "holiday_keys": ("christmas", "sinterklaas")},
      "Christmas Day, Sinterklaas"),
+    ({"date_mode": holidays.DATE_ALWAYS, "weekday_mask": holidays.WEEKDAYS}, "Mo–Fr"),
 ])
 def test_the_rule_reads_as_a_sentence(kwargs, expected):
     assert describe_days(_sched(**kwargs)) == expected
@@ -231,15 +275,23 @@ def test_the_rule_reads_as_a_sentence(kwargs, expected):
 
 
 def test_all_days_is_the_absence_of_a_rule_not_a_stored_flag():
-    assert _sched().is_all_days
-    assert not _sched(weekday_mask=holidays.WEEKDAYS).is_all_days
-    assert not _sched(holiday_keys=("christmas",)).is_all_days
-    assert not _sched(skip_public_holidays=True).is_all_days
+    assert _sched().is_every_weekday
+    assert not _sched(weekday_mask=holidays.WEEKDAYS).is_every_weekday
+    assert not _sched(skip_public_holidays=True).is_every_weekday
+
+
+def test_holidays_do_not_make_the_weekday_rule_custom():
+    """They live in the Dates column and say nothing about weekdays.
+
+    A schedule that runs every weekday and additionally on Christmas still has
+    the default weekday rule, so the Days column must sit on All.
+    """
+    assert _sched(holiday_keys=("christmas",)).is_every_weekday
 
 
 def test_an_unflushed_schedule_reads_as_all_days():
     """`None` is what the mask is before the INSERT applies its default."""
-    assert _sched(weekday_mask=None).is_all_days
+    assert _sched(weekday_mask=None).is_every_weekday
 
 
 @pytest.mark.parametrize(("kwargs", "expected"), [
@@ -249,21 +301,49 @@ def test_an_unflushed_schedule_reads_as_all_days():
     ({"weekday_mask": 0b0010101}, "Mo, We, Fr"),
     ({"weekday_mask": holidays.WEEKDAYS, "skip_public_holidays": True},
      "Mo–Fr · skipping"),
+    # The holidays belong to the Dates column, so they never appear here --
+    # two controls describing the same fact is two controls that can disagree.
     ({"weekday_mask": holidays.WEEKDAYS, "holiday_keys": ("christmas",)},
-     "Mo–Fr · Christmas Day"),
+     "Mo–Fr"),
     ({"weekday_mask": holidays.WEEKDAYS, "holiday_keys": ("christmas", "sinterklaas"),
-      "skip_public_holidays": True}, "Mo–Fr · 2 holidays · skipping"),
+      "skip_public_holidays": True}, "Mo–Fr · skipping"),
     ({"weekday_mask": holidays.NO_DAYS, "holiday_keys": ("christmas",)},
-     "No weekday · Christmas Day"),
+     "No weekday"),
     # Skip has nothing to act on without a weekday, so it is not mentioned.
     ({"weekday_mask": holidays.NO_DAYS, "holiday_keys": ("christmas",),
-      "skip_public_holidays": True}, "No weekday · Christmas Day"),
+      "skip_public_holidays": True}, "No weekday"),
 ])
 def test_the_row_summary_says_what_the_rule_is(kwargs, expected):
     assert _sched(**kwargs).day_summary == expected
 
 
+@pytest.mark.parametrize(("keys", "expected"), [
+    ((), "No holidays"),
+    (("christmas",), "Christmas Day"),
+    # Both fit the column, so both are named rather than counted.
+    (("christmas", "sinterklaas"), "Christmas Day, Sinterklaas"),
+])
+def test_the_dates_cell_summarises_the_holidays(keys, expected):
+    assert _sched(holiday_keys=keys).holiday_summary == expected
+
+
+def test_a_long_selection_names_what_fits_and_counts_the_rest():
+    """'5 holidays' names nothing you could act on; the first few do."""
+    keys = ("new_year", "easter_monday", "labour_day", "ascension", "whit_monday")
+    summary = _sched(holiday_keys=keys).holiday_summary
+    assert summary.endswith(" others")
+    assert summary.startswith("New Year's Day")
+    assert len(summary) <= holidays.NAME_LIST_BUDGET + len(" and 4 others")
+
+
 def test_a_single_holiday_is_named_rather_than_counted():
     """'1 holiday' tells you nothing; the name tells you everything."""
-    assert "Christmas Day" in _sched(
-        weekday_mask=holidays.NO_DAYS, holiday_keys=("christmas",)).day_summary
+    assert _sched(holiday_keys=("christmas",)).holiday_summary == "Christmas Day"
+
+
+def test_the_holiday_summary_never_mentions_the_skip():
+    """That switch lives in the Days column and is reported by `day_summary`."""
+    summary = _sched(weekday_mask=holidays.WEEKDAYS,
+                     holiday_keys=("christmas",),
+                     skip_public_holidays=True).holiday_summary
+    assert summary == "Christmas Day"

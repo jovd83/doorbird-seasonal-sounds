@@ -16,7 +16,7 @@ data/*.db-shm
 # Backups too: a copy of the database holds the same encrypted device
 # passwords as the original, and a timestamped name does not end in `.db`.
 data/*backup*
-data/*.bak
+data/*.bak*
 data/*.sqlite*
 data/mp3/*
 data/ulaw/*

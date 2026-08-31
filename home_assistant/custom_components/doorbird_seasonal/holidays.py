@@ -33,6 +33,36 @@ WEEKDAY_LABELS: tuple[str, ...] = ("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
 WEEKDAY_NAMES: tuple[str, ...] = (
     "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
+# --------------------------------------------------------------- date mode
+
+# How a schedule decides *which dates* it covers. The three are mutually
+# exclusive: a schedule is either unrestricted, or bounded by a calendar
+# window, or pinned to a set of named holidays. They used to be entangled --
+# the window was mandatory and holidays merely added days inside it -- which
+# made "only on Christmas" impossible to say without also inventing a range.
+DATE_ALWAYS = "always"
+DATE_RANGE = "range"
+DATE_HOLIDAYS = "holidays"
+DATE_MODES: tuple[str, ...] = (DATE_ALWAYS, DATE_RANGE, DATE_HOLIDAYS)
+
+DATE_MODE_LABELS: dict[str, str] = {
+    DATE_ALWAYS: "Always",
+    DATE_RANGE: "Date interval",
+    DATE_HOLIDAYS: "Holidays",
+}
+
+
+def effective_date_mode(mode: str | None) -> str:
+    """The mode to actually match on, with anything unknown reading as a range.
+
+    Every schedule written before the column existed has a stored window and
+    no mode, and a window is exactly what `range` means, so that is the safe
+    reading -- and it keeps the matcher total rather than raising on a row
+    that is perfectly valid.
+    """
+    return mode if mode in DATE_MODES else DATE_RANGE
+
+
 ALL_DAYS = 0b1111111        # 127 — every schedule written before this existed
 WEEKDAYS = 0b0011111        # 31  — Mon–Fri
 WEEKEND = 0b1100000         # 96  — Sat–Sun
@@ -133,6 +163,51 @@ class Holiday:
         return f"{self.day} {_MONTH_NAMES[self.month - 1][:3]}"
 
 
+# How many characters of holiday names the Dates column shows before the list
+# has to be trimmed. The 11rem column fits roughly 29 characters a line and
+# the summary is allowed to wrap once. The row's script is handed this same
+# number, so the two never disagree about where to cut.
+NAME_LIST_BUDGET = 44
+
+
+def _and_others(count: int) -> str:
+    return f" and {count} other" + ("s" if count != 1 else "")
+
+
+def summarise_names(names, budget: int = NAME_LIST_BUDGET) -> str:
+    """'Christmas Day, Sinterklaas' while it fits, else '... and 3 others'.
+
+    Naming the days beats counting them -- '2 holidays' tells you nothing you
+    could act on -- so the whole list is shown whenever it fits the column,
+    and only the overflow is folded away. At least one name is always kept,
+    however long it is, because a bare "and 4 others" names nothing at all.
+    """
+    names = list(names)
+    if not names:
+        return ""
+    joined = ", ".join(names)
+    if len(joined) <= budget:
+        return joined
+
+    shown: list[str] = []
+    for name in names:
+        remaining = len(names) - len(shown) - 1
+        candidate = ", ".join([*shown, name])
+        if remaining:
+            candidate += _and_others(remaining)
+        if shown and len(candidate) > budget:
+            break
+        shown.append(name)
+
+    left = len(names) - len(shown)
+    return ", ".join(shown) + (_and_others(left) if left else "")
+
+
+def short_date(month: int, day: int) -> str:
+    """'25 Dec' -- the compact form the schedule rows use for a date."""
+    return f"{day} {_MONTH_NAMES[month - 1][:3]}"
+
+
 _MONTH_NAMES = ("January", "February", "March", "April", "May", "June",
                 "July", "August", "September", "October", "November", "December")
 
@@ -163,6 +238,11 @@ HOLIDAYS: tuple[Holiday, ...] = (
     Holiday("whit_sunday", "Whit Sunday", GROUP_OBSERVANCE, easter_offset=49),
     Holiday("halloween", "Halloween", GROUP_OBSERVANCE, month=10, day=31),
     Holiday("sinterklaas", "Sinterklaas", GROUP_OBSERVANCE, month=12, day=6),
+    # Tweede Kerstdag. An observance rather than a public holiday: 26 December
+    # is a federal holiday in the Netherlands and Germany but not in Belgium,
+    # and GROUP_PUBLIC is what "skip public holidays" subtracts, so filing it
+    # there would quietly start dropping Boxing Day from Mo-Fr schedules.
+    Holiday("second_christmas", "2nd Christmas", GROUP_OBSERVANCE, month=12, day=26),
     Holiday("new_years_eve", "New Year's Eve", GROUP_OBSERVANCE, month=12, day=31),
 )
 

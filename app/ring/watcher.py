@@ -23,7 +23,6 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime
 
 from app import settings_store
 from app.config import settings
@@ -72,7 +71,6 @@ class _DeviceWatcher(threading.Thread):
         self.fingerprint = _fingerprint(name, creds)
         self.stop_event = threading.Event()
         self.connected = False
-        self.last_ring: datetime | None = None
         self.last_error: str | None = None
 
     # ---------------------------------------------------------------- run
@@ -128,7 +126,7 @@ class _DeviceWatcher(threading.Thread):
         if not claim_ring(self.device_id):
             log.info("[%s] ring ignored (debounce)", self.device_name)
             return
-        self.last_ring = datetime.now()
+        # `claim_ring` above has already stamped the device's last_ring_at.
         log.info("[%s] RING via monitor.cgi", self.device_name)
         threading.Thread(
             target=self._play_safely, name=f"chime-{self.device_name}", daemon=True
@@ -272,7 +270,6 @@ class WatcherStatus:
     device: str
     alive: bool
     connected: bool
-    last_ring: datetime | None
     last_error: str | None
 
     @property
@@ -286,6 +283,13 @@ class WatcherStatus:
 
 
 def status() -> list[WatcherStatus]:
+    """Listener health only.
+
+    Deliberately does not touch the database: this renders on every dashboard
+    and settings load, and a page is budgeted a fixed number of sessions. The
+    last ring lives on the device row -- it outlives the thread, and a webhook
+    ring never reaches a watcher at all -- so callers read it from there.
+    """
     with _lock:
         watchers = list(_watchers.values())
     return [
@@ -294,7 +298,6 @@ def status() -> list[WatcherStatus]:
             device=w.device_name,
             alive=w.is_alive(),
             connected=w.connected,
-            last_ring=w.last_ring,
             last_error=w.last_error,
         )
         for w in watchers

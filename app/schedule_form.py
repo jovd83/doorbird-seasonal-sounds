@@ -90,8 +90,47 @@ def build_time_window(*, all_day: bool, start_time: str, end_time: str) -> TimeW
     return TimeWindow(start, end)
 
 
-def build_date_fields(*, start: str, end: str, recurring: bool) -> dict[str, int | None]:
-    """Turn the two date inputs into the stored month/day/year columns."""
+def build_date_fields(
+    *, start: str, end: str, recurring: bool,
+    mode: str = holidays.DATE_RANGE, holiday_keys: tuple[str, ...] = (),
+) -> dict[str, int | str | None]:
+    """Turn the date controls into the stored mode and month/day/year columns.
+
+    The three modes are exclusive. `always` and `holidays` still store a
+    window -- a full year -- because the columns are NOT NULL and because
+    keeping whatever dates were typed means switching modes back and forth in
+    the form does not quietly lose them. Nothing reads those columns outside
+    `range` mode; `matches_date` branches on the mode first.
+
+    `holidays` mode needs at least one holiday, or it names no days at all and
+    could never fire. That is a half-finished edit rather than a way to
+    silence a schedule -- the Enabled switch is for that.
+    """
+    mode = holidays.effective_date_mode(mode)
+
+    if mode == holidays.DATE_HOLIDAYS and not holiday_keys:
+        raise FormError(
+            "pick at least one holiday - a schedule set to Holidays with none "
+            "ticked could never play")
+
+    if mode in (holidays.DATE_ALWAYS, holidays.DATE_HOLIDAYS):
+        # A whole recurring year: the widest window, and inert either way.
+        return {
+            "date_mode": mode,
+            "start_month": 1, "start_day": 1,
+            "end_month": 12, "end_day": 31,
+            "start_year": None, "end_year": None,
+        }
+
+    return {"date_mode": mode, **_range_fields(start, end, recurring)}
+
+
+def _range_fields(start: str, end: str, recurring: bool) -> dict[str, int | None]:
+    """The stored month/day/year columns for an explicit calendar window."""
+    if not (start or "").strip():
+        raise FormError(
+            "give a start date - or set Dates to Always if this should apply "
+            "on every date")
     sd = parse_iso_date(start)
     ed = parse_iso_date(end) if (end or "").strip() else sd
 
@@ -122,48 +161,80 @@ def build_date_fields(*, start: str, end: str, recurring: bool) -> dict[str, int
 
 @dataclass(frozen=True)
 class DayRule:
-    """The weekday/holiday half of the form, parsed and checked."""
+    """The weekday half of the form, parsed and checked.
+
+    Holidays are not here any more. They decide *which dates* a schedule
+    covers, which is the date mode's job, and a rule that owned both could
+    describe a schedule the date mode disagreed with.
+    """
 
     weekday_mask: int
-    holiday_keys: tuple[str, ...]
     skip_public_holidays: bool
 
     def as_fields(self) -> dict[str, int | bool]:
-        """Only the plain columns; the keys go through `set_holiday_keys`."""
         return {
             "weekday_mask": self.weekday_mask,
             "skip_public_holidays": self.skip_public_holidays,
         }
+
+    @classmethod
+    def unrestricted(cls) -> DayRule:
+        """Every weekday, nothing skipped -- what `holidays` mode stores.
+
+        In that mode the Days control is greyed out and `matches_day` ignores
+        the mask, so storing a narrower one would leave a rule on the row that
+        nothing honours.
+        """
+        return cls(weekday_mask=holidays.ALL_DAYS, skip_public_holidays=False)
+
+
+def parse_holiday_keys(holiday_keys: list[str] | None) -> tuple[str, ...]:
+    """The ticked holidays, deduplicated and checked against the catalogue.
+
+    Read independently of the day mode. A holiday is part of *which dates* a
+    schedule covers -- it sits with the date range in the form, not with the
+    weekdays -- so "every weekday" no longer implies "and therefore no
+    holidays". They only ever add days; nothing here takes one away.
+    """
+    keys: list[str] = []
+    for raw in holiday_keys or []:
+        key = str(raw).strip()
+        if not key:
+            continue
+        if key not in holidays.VALID_KEYS:
+            raise FormError(f"unknown holiday {key!r}")
+        if key not in keys:
+            keys.append(key)
+    return tuple(keys)
 
 
 def build_day_rule(
     *,
     mode: str,
     weekdays: list[str] | None,
-    holiday_keys: list[str] | None,
     skip_public_holidays: bool,
 ) -> DayRule:
-    """Turn the day-mode radio and the modal's fields into stored fields.
+    """Turn the day-mode radio and both editors' fields into stored fields.
 
-    `mode` is the row's "All / Custom" choice and doubles as the marker that
-    this submission carried the day controls at all. Anything other than
-    `custom` -- including a missing field, which is what a client written
-    before this feature sends -- means every day with no holiday rule, and
-    that is what such a schedule has always done.
+    `mode` is the row's "All / Custom" choice for the *weekday* rule, and
+    doubles as the marker that this submission carried the day controls at
+    all. Anything other than `custom` -- including a missing field, which is
+    what a client written before this feature sends -- means every weekday
+    with nothing skipped.
 
-    On `custom` the seven day numbers and the holiday keys are read as posted.
-    The form sends weekday numbers rather than a mask because seven checkboxes
-    named the same thing is what HTML gives you, and reassembling them here
-    beats asking the browser for arithmetic.
+    On `custom` the seven day numbers are read as posted. The form sends
+    weekday numbers rather than a mask because seven checkboxes named the same
+    thing is what HTML gives you, and reassembling them here beats asking the
+    browser for arithmetic.
 
-    A custom rule that ticks no day and no holiday can never fire. That is
+    A custom rule that ticks no weekday can never fire, because in the two
+    modes that consult it there is nothing else left to match on. That is
     almost always a half-finished edit rather than an intent to silence the
-    schedule -- there is an Enabled switch for that -- so it is rejected rather
-    than saved as something that quietly never plays.
+    schedule -- there is an Enabled switch for that -- so it is rejected
+    rather than saved as something that quietly never plays.
     """
     if (mode or "").strip().lower() != MODE_CUSTOM:
-        return DayRule(weekday_mask=holidays.ALL_DAYS, holiday_keys=(),
-                       skip_public_holidays=False)
+        return DayRule.unrestricted()
 
     mask = 0
     for raw in weekdays or []:
@@ -178,27 +249,16 @@ def build_day_rule(
             raise FormError(f"day of the week must be 0-6, got {index}")
         mask |= 1 << index
 
-    keys: list[str] = []
-    for raw in holiday_keys or []:
-        key = str(raw).strip()
-        if not key:
-            continue
-        if key not in holidays.VALID_KEYS:
-            raise FormError(f"unknown holiday {key!r}")
-        if key not in keys:
-            keys.append(key)
-
-    if not mask and not keys:
+    if not mask:
         raise FormError(
-            "pick at least one day of the week, or one holiday - "
-            "a schedule with neither could never play")
+            "pick at least one day of the week - a schedule with none could "
+            "never play. To fire on named days instead, set Dates to Holidays")
 
     # With no weekday ticked there is nothing for the skip to subtract from,
     # and a stored true would be a trap: the modal disables the switch in that
     # state, so it must not survive a round trip either.
     return DayRule(
         weekday_mask=mask,
-        holiday_keys=tuple(keys),
         skip_public_holidays=bool(skip_public_holidays) and bool(mask),
     )
 

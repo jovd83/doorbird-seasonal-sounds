@@ -53,6 +53,9 @@ class Schedule:
     weekday_mask: int = holidays.ALL_DAYS
     skip_public_holidays: bool = False
     holiday_keys: frozenset[str] = field(default_factory=frozenset)
+    # Which of the three exclusive date rules applies. Defaults to `range`,
+    # which is what every schedule written before the column meant.
+    date_mode: str = holidays.DATE_RANGE
 
     @property
     def all_day(self) -> bool:
@@ -71,9 +74,26 @@ def _end_md(s: Schedule) -> tuple[int, int]:
 
 
 def matches_date(s: Schedule, today: date) -> bool:
-    """Does the schedule's calendar window cover this day?"""
+    """Does the schedule cover this date at all?
+
+    Three mutually exclusive modes, which is the point of the column:
+
+    * `always`    -- no calendar restriction; every date qualifies.
+    * `holidays`  -- only the named holidays, whatever date they land on.
+    * `range`     -- the stored month/day window, as it has always worked.
+
+    Holidays used to be additive *inside* a mandatory window, so "only on
+    Christmas" could not be said without also inventing a range that happened
+    to contain it. Making the three exclusive is what makes that sayable.
+    """
     if not s.enabled:
         return False
+
+    mode = holidays.effective_date_mode(s.date_mode)
+    if mode == holidays.DATE_ALWAYS:
+        return True
+    if mode == holidays.DATE_HOLIDAYS:
+        return bool((s.holiday_keys or frozenset()) & holidays.keys_on(today))
 
     end_m, end_d = _end_md(s)
 
@@ -117,24 +137,23 @@ def matches_time(s: Schedule, minute_of_day: int) -> bool:
 
 
 def matches_day(s: Schedule, today: date) -> bool:
-    """Does the schedule's weekday / holiday rule cover this day?
+    """Does the schedule's weekday rule cover this day?
 
-    A day matches when it is a ticked weekday **or** a ticked holiday. The two
-    are a union rather than an intersection on purpose: "Mo–Fr, and Christmas
-    whenever it falls" is the common case, and intersecting them would make it
-    impossible to say without ticking all seven days.
+    In `holidays` mode there is nothing left to narrow: the person named the
+    exact days they wanted, so a weekday rule could only take one of them
+    away again. Christmas fires on a Christmas that falls on a Sunday even
+    when the weekday rule says Mo–Fr. Every other mode applies the mask.
 
     `skip_public_holidays` is the one subtraction, and it only ever removes a
-    day that matched by weekday. A holiday ticked explicitly always wins --
-    otherwise a schedule could name Christmas Day and skip it in the same
-    breath.
+    day that matched by weekday -- which is why it is inert in `holidays` mode
+    too, where nothing matched by weekday in the first place.
     """
-    on_this_day = holidays.keys_on(today)
-    if s.holiday_keys & on_this_day:
+    if holidays.effective_date_mode(s.date_mode) == holidays.DATE_HOLIDAYS:
         return True
     if not holidays.day_selected(s.weekday_mask, today.weekday()):
         return False
-    skipped = s.skip_public_holidays and bool(on_this_day & holidays.PUBLIC_KEYS)
+    skipped = s.skip_public_holidays and bool(
+        holidays.keys_on(today) & holidays.PUBLIC_KEYS)
     return not skipped
 
 
@@ -150,6 +169,14 @@ def matches_now(s: Schedule, when: datetime) -> bool:
 
 
 def _window_span_days(s: Schedule) -> int:
+    mode = holidays.effective_date_mode(s.date_mode)
+    if mode == holidays.DATE_ALWAYS:
+        # The widest window there is, so it loses every tie to a real range.
+        return 366
+    if mode == holidays.DATE_HOLIDAYS:
+        # A handful of named days is the narrowest statement on the page.
+        return len(s.holiday_keys or ())
+
     end_m, end_d = _end_md(s)
     if s.start_year is not None:
         try:
@@ -169,10 +196,13 @@ def _window_span_days(s: Schedule) -> int:
 def _day_span(s: Schedule) -> int:
     """How many weekdays the rule covers; fewer is more specific.
 
-    A holidays-only schedule scores 0 and therefore beats every weekday rule at
-    the same priority, which is what you want: naming Christmas Day is a more
-    deliberate statement than ticking Monday.
+    A holidays-mode schedule scores 0 and therefore beats every weekday rule
+    at the same priority, which is what you want: naming Christmas Day is a
+    more deliberate statement than ticking Monday. Its stored mask is ignored
+    in that mode, so scoring it would rank on a number nothing reads.
     """
+    if holidays.effective_date_mode(s.date_mode) == holidays.DATE_HOLIDAYS:
+        return 0
     return holidays.day_count(s.weekday_mask)
 
 

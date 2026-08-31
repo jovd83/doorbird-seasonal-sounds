@@ -8,9 +8,10 @@
   whole chain — button, listener, speaker — is still working. Anything over two
   days without a ring gets the stale treatment rather than reading as calm.
 #}
-{% set rings = ring_status | selectattr('last_ring') | list %}
-{% set latest = (rings | sort(attribute='last_ring') | last) if rings else none %}
-{% set stale = latest and (latest.last_ring | hours_since(now)) > 48 %}
+{# Sourced from the device row, not the watcher: the ring time is persisted,
+   so it survives a restart, and a webhook ring never touches a watcher. #}
+{% set latest = last_ring_device %}
+{% set stale = latest and (latest.last_ring_at | hours_since(now)) > 48 %}
 {# A watcher that is alive but not connected is reconnecting, which is
    routine. Only a thread that has stopped is worth an alert banner. #}
 {% set stopped = ring_status | rejectattr('alive') | list %}
@@ -64,29 +65,30 @@
       <span class="micro">Last ring</span>
       {% if latest %}
         <div class="hero-line">
-          <span class="hero-figure tnum">{{ latest.last_ring.strftime('%H:%M') }}</span>
-          <span class="hero-unit tnum">:{{ latest.last_ring.strftime('%S') }}</span>
+          <span class="hero-figure tnum">{{ latest.last_ring_at.strftime('%H:%M') }}</span>
+          <span class="hero-unit tnum">:{{ latest.last_ring_at.strftime('%S') }}</span>
         </div>
         <div class="hero-meta">
-          <span>{{ latest.last_ring | since(now) }}</span>
+          <span>{{ latest.last_ring_at | since(now) }}</span>
           <span class="sep" style="width:3px;height:3px;border-radius:999px;background:var(--faint)"></span>
-          {{ icon("station", 14) }}<span>{{ latest.device }}</span>
+          {{ icon("station", 14) }}<span>{{ latest.name }}</span>
         </div>
-        <p class="help">{{ latest.last_ring | dt }} &middot; {{ tz_name }}</p>
+        <p class="help">{{ latest.last_ring_at | dt }} &middot; {{ tz_name }}</p>
       {% else %}
         <div class="hero-line">
           <span class="hero-figure" style="font-size:34px;color:var(--muted)">No rings yet</span>
         </div>
         <div class="hero-meta"><span>Waiting for the first press</span></div>
         <p class="help">
-          The listener is connected; nothing has pressed the button since it started.
+          Nothing has pressed the button yet. This survives a restart, so it
+          stays accurate once the first ring lands.
         </p>
       {% endif %}
     </div>
     <div class="hero-side">
       {{ ringmark(104, "idle" if (stale or not latest) else "live", "bell") }}
       {% if stale %}
-        <span class="chip chip--warn">{{ icon("clock") }}Stale — no ring in {{ (latest.last_ring | hours_since(now) / 24) | round(0, 'floor') | int }} days</span>
+        <span class="chip chip--warn">{{ icon("clock") }}Stale — no ring in {{ (latest.last_ring_at | hours_since(now) / 24) | round(0, 'floor') | int }} days</span>
       {% elif latest %}
         <span class="chip chip--live"><span class="dot"></span>Listening</span>
       {% else %}
@@ -196,8 +198,8 @@
                 <span class="list-sub">
                   {% if w.last_error %}
                     <span style="color:var(--alert)">{{ w.last_error }}</span>
-                  {% elif w.last_ring %}
-                    last ring <span class="tnum">{{ w.last_ring | dt }}</span>
+                  {% elif last_rings.get(w.device_id) %}
+                    last ring <span class="tnum">{{ last_rings.get(w.device_id) | dt }}</span>
                   {% else %}
                     waiting for the first ring
                   {% endif %}

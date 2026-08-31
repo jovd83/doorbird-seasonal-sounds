@@ -8,24 +8,80 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A schedule's dates are one of three exclusive rules.** The Dates column is
+  now *Always*, a *Date interval*, or a set of *Holidays*. The calendar window
+  used to be mandatory, which made "only on Christmas" impossible to say
+  without also inventing a range that happened to contain it. Stored as
+  `schedules.date_mode`; migration `0005` puts every existing schedule on
+  `range`, which is what it already meant.
+- **2nd Christmas** (26 December) joins the holiday catalogue, as an
+  *observance* rather than a public holiday. It is federal in the Netherlands
+  and Germany but not in Belgium, and the public group is the one that *skip
+  public holidays* subtracts from — filing it there would quietly start
+  dropping Boxing Day from every Mo–Fr schedule. Twenty entries now.
+- `devices.last_ring_at`, so the dashboard's headline figure survives a
+  restart. Migration `0004` backfills it from the audit log, so an existing
+  install does not read "No rings yet" until the next press.
+
 ### Changed
 
 - **The day rule is now `All` / `Custom` with a dialog behind it.** Seven
   weekday chips and a holiday disclosure in every table row was more furniture
   than a column that usually just says "all days" deserves. The row now carries
-  two radios and a one-line summary — *Mo–Fr · 2 holidays · skipping* — and
-  everything else moved into a modal that opens when Custom is picked, or by
-  clicking the summary. The modal is driven by a checkbox, so it still opens
-  with scripting off, the same way the mobile "More" sheet does.
+  two radios and a one-line summary — *Mo–Fr · skipping* — and everything else
+  moved into a modal that opens when Custom is picked, or by clicking the
+  summary. The modal is driven by a checkbox, so it still opens with scripting
+  off, the same way the mobile "More" sheet does.
 - The form field is `day_mode` (`all` / `custom`) rather than the previous
   hidden marker. Anything that is not `custom` — including the field being
   absent, which is what a client written before this sends — means every day.
+- **Holidays moved from the Days column to the Dates column.** A holiday says
+  *which dates* a schedule covers, the same job as the range beside it, not
+  which weekdays are eligible. Each column now owns one fact and reports it in
+  its own summary, so the two can no longer describe the same schedule
+  differently.
+- The Dates cell names the holidays it has rather than counting them —
+  *Christmas Day, Sinterklaas* while the list fits the column, then
+  *New Year's Day, Easter Monday and 3 others*. "2 holidays" told you nothing
+  you could act on. The server and the row's script share one budget, so the
+  summary cannot change on save.
+- The Days control is greyed out in Holidays mode. The weekday mask is not
+  consulted there, and a live-looking control that nothing honours is worse
+  than no control. Its stored value is kept and returns if the mode changes.
+- `start` is no longer a required form field: only *Date interval* reads it.
 - The inline-edit table is ~190px narrower again, since the Days column no
   longer has to hold seven toggles.
 
 ### Fixed
 
+- **A weekday selection was silently discarded unless you had clicked
+  "Custom" first.** The summary label opens the day dialog directly, so it was
+  possible to tick Mo–Fr, save, and get *Every day* back with nothing to say
+  why: the mode radio still read *All*, and the server treats anything but
+  `custom` as every day. The radio now follows what the dialog contains.
+- **A fresh holiday selection did not appear until you pressed Save.** The
+  hook that keeps the summary in step was left behind on a macro removed when
+  the Dates cell was rebuilt, so nothing bound to it.
+- **The dashboard read "No rings yet" after every restart** while the audit log
+  still listed the rings. The last ring lived on the watcher thread object, so
+  it was wiped whenever the process restarted — and it was only ever written on
+  the `monitor.cgi` path, so a ring arriving through the webhook never
+  registered at all. It is a column on the device now, written wherever a ring
+  is claimed, which is the one place every trigger source passes through.
+- The `.gitignore` rule for database backups missed a timestamped suffix, so a
+  file holding the same encrypted device passwords as the live database was
+  committable.
+- Two duplicated bullets in the README's feature list.
+
 ### Removed
+
+- **The weekday-or-holiday union.** A day used to match when it was a ticked
+  weekday *or* a ticked holiday. With the two now owned by different columns
+  that rule had no home, and it was the reason a schedule could describe
+  itself two ways at once. "Mo–Fr, and Christmas whenever it falls" is two
+  schedules now: a weekday one, and a Holidays one at a higher priority. That
+  is more typing, and it is also the only version whose behaviour you can read
+  off the row.
 
 ## [0.2.0] — 2026-08-30
 

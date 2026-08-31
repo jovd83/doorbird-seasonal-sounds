@@ -84,9 +84,105 @@
 {% endmacro %}
 
 {#
+  The Dates cell: three mutually exclusive rules, only one of which needs any
+  detail on screen at a time. Radios rather than a select so the choice is
+  legible at a glance in a dense table, and so it still works with no script --
+  without one both panels stay visible and the server honours the radio.
+#}
+{% macro date_mode_control(fid, uid, mode, start_iso, end_iso, hol_summary) %}
+  {# Both hooks on one element: `js-daterule` swaps the panels, `js-holrule`
+     keeps the holiday summary below in step with the modal's boxes. Dropping
+     the second is what made a fresh selection invisible until save. #}
+  <div class="stack-sm js-daterule js-holrule" style="gap:8px"
+       data-modal="holmodal_{{ uid }}">
+    <div class="segmented segmented--three">
+      {% for value, label in date_modes %}
+        <label class="seg">
+          <input class="js-datemode" {% if fid %}form="{{ fid }}"{% endif %} type="radio"
+                 name="date_mode" value="{{ value }}" {% if mode == value %}checked{% endif %}>
+          <span class="seg-face">{{ label }}</span>
+        </label>
+      {% endfor %}
+    </div>
+
+    <div class="js-datepanel" data-mode="{{ mode_range }}">
+      <div class="stack-sm" style="gap:6px">
+        <input class="input-sm" {% if fid %}form="{{ fid }}"{% endif %} type="date" name="start"
+               value="{{ start_iso }}" aria-label="Start date">
+        <input class="input-sm" {% if fid %}form="{{ fid }}"{% endif %} type="date" name="end"
+               value="{{ end_iso }}" aria-label="End date">
+      </div>
+    </div>
+
+    <div class="js-datepanel" data-mode="{{ mode_holidays }}">
+      <label class="day-summary {{ 'is-muted' if hol_summary == 'No holidays' else '' }}"
+             for="holmodal_{{ uid }}">
+        <span class="js-holsum">{{ hol_summary }}</span>
+        {{ icon("sliders", 13) }}
+      </label>
+    </div>
+
+    <p class="help js-datenote" data-mode="{{ mode_always }}" style="margin:0">
+      Every date. Narrow it with <strong>Days</strong> if you need to.
+    </p>
+  </div>
+{% endmacro %}
+
+{#
+  The holiday picker in a table cell: a summary and a button that opens it.
+  Lives in the Dates column, not the Days one -- a holiday says *which dates*
+  a schedule covers, the same job as the range above it, whereas the Days
+  column narrows which weekdays inside that range are eligible.
+#}
+{% macro holiday_modal(fid, uid, title, chosen) %}
+  <input class="modal-toggle" type="checkbox" id="holmodal_{{ uid }}" aria-hidden="true">
+  <div class="modal js-modal js-holmodal">
+    <label class="modal-shade" for="holmodal_{{ uid }}" aria-label="Close"></label>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-label="Holidays">
+      <div class="modal-head">
+        <span class="card-title">{{ icon("cal", 16) }}Holidays{% if title %} &middot; {{ title }}{% endif %}</span>
+        <label class="icon-btn" for="holmodal_{{ uid }}" aria-label="Close">{{ icon("x", 16) }}</label>
+      </div>
+
+      <div class="modal-body">
+        <div class="stack-sm" style="gap:12px">
+          <div class="inline">
+            <span class="field-label">Belgian holidays</span>
+            <span class="chip chip--sm js-holtotal">0 of {{ holiday_total }} selected</span>
+            <span class="push"></span>
+            <a class="small muted" href="/holidays" target="_blank" rel="noopener">See every date &rarr;</a>
+          </div>
+          {{ holiday_boxes(fid, chosen) }}
+          <p class="help inline" style="gap:6px">
+            {{ icon("refresh", 11) }}
+            Moves each year. Every occurrence through the next century is stored.
+          </p>
+        </div>
+
+        <div class="note note--live">
+          {{ icon("info", 16) }}
+          <div class="note-body">
+            A ticked holiday fires <strong>whatever weekday it lands on</strong>,
+            on top of the date range &mdash; so Mo&ndash;Fr plus Christmas Day
+            fires on Christmas even when it falls on a Sunday. It still has to
+            sit inside the range.
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <span class="help js-holsum-long"></span>
+        <span class="push"></span>
+        <label class="btn btn--primary" for="holmodal_{{ uid }}">Done</label>
+      </div>
+    </div>
+  </div>
+{% endmacro %}
+
+{#
   The day rule in a table cell: two radios and a summary. Everything else is
-  behind the modal, because seven toggles plus nineteen holidays in every row
-  was more furniture than a column that usually just says "all days" deserves.
+  behind the modal, because seven toggles in every row was more furniture than
+  a column that usually just says "all days" deserves.
 #}
 {% macro day_mode_control(fid, uid, all_days, summary) %}
   <div class="stack-sm js-dayrule" style="gap:8px" data-modal="daymodal_{{ uid }}">
@@ -117,13 +213,13 @@
   the other. `position: fixed` escapes both. The checkbox drives it so it still
   opens with scripting off -- the same trick the mobile "More" sheet uses.
 #}
-{% macro day_modal(fid, uid, title, mask, chosen, skip) %}
+{% macro day_modal(fid, uid, title, mask, skip) %}
   <input class="modal-toggle" type="checkbox" id="daymodal_{{ uid }}" aria-hidden="true">
   <div class="modal js-modal">
     <label class="modal-shade" for="daymodal_{{ uid }}" aria-label="Close"></label>
-    <div class="modal-panel" role="dialog" aria-modal="true" aria-label="Days and holidays">
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-label="Days of the week">
       <div class="modal-head">
-        <span class="card-title">{{ icon("cal", 16) }}Days and holidays{% if title %} &middot; {{ title }}{% endif %}</span>
+        <span class="card-title">{{ icon("cal", 16) }}Days of the week{% if title %} &middot; {{ title }}{% endif %}</span>
         <label class="icon-btn" for="daymodal_{{ uid }}" aria-label="Close">{{ icon("x", 16) }}</label>
       </div>
 
@@ -136,37 +232,22 @@
 
         <div class="divider-soft"></div>
 
-        <div class="stack-sm" style="gap:12px">
-          <div class="inline">
-            <span class="field-label">Belgian holidays</span>
-            <span class="chip chip--sm js-holtotal">0 of {{ holiday_total }} selected</span>
-            <span class="push"></span>
-            <a class="small muted" href="/holidays" target="_blank" rel="noopener">See every date &rarr;</a>
-          </div>
-          {{ holiday_boxes(fid, chosen) }}
-          <p class="help inline" style="gap:6px">
-            {{ icon("refresh", 11) }}
-            Moves each year. Every occurrence through the next century is stored.
-          </p>
-        </div>
-
-        <div class="divider-soft"></div>
-
         <div class="stack-sm" style="gap:9px">
           {{ skip_switch(fid, skip, uid) }}
           <p class="help">
             Drops a day that matched only by its weekday when it is one of the ten
             public holidays &mdash; that is how you write &ldquo;Mo&ndash;Fr, but not
-            on a public holiday&rdquo;. Holidays ticked above always apply.
+            on a public holiday&rdquo;. A holiday ticked in the <strong>Dates</strong>
+            column always applies and is never skipped.
           </p>
         </div>
 
         <div class="note note--live">
           {{ icon("info", 16) }}
           <div class="note-body">
-            A day matches when it is a ticked <strong>weekday</strong> or a ticked
-            <strong>holiday</strong> &mdash; so Mo&ndash;Fr plus Christmas Day fires on
-            Christmas even when it falls on a Sunday.
+            This narrows the date range to certain weekdays. To add a single day
+            back whatever weekday it lands on, tick it as a holiday under
+            <strong>Dates</strong>.
           </div>
         </div>
       </div>
@@ -249,7 +330,8 @@
               hidden onsubmit="return confirm('Delete {{ s.name }}?');">
           {{ csrf_input(request) }}</form>
         {{ day_modal("sched-" ~ s.id, s.id, s.name, s.weekday_mask,
-                     s.holiday_keys, s.skip_public_holidays) }}
+                     s.skip_public_holidays) }}
+        {{ holiday_modal("sched-" ~ s.id, s.id, s.name, s.holiday_keys) }}
       {% endfor %}
       <table class="tbl tbl--form {{ 'has-wait' if is_auto else '' }}">
         <thead>
@@ -288,12 +370,8 @@
                      aria-label="Name">
             </td>
             <td>
-              <div class="stack-sm" style="gap:6px">
-                <input class="input-sm" form="{{ f }}" type="date" name="start"
-                       value="{{ start_iso }}" required aria-label="Start date">
-                <input class="input-sm" form="{{ f }}" type="date" name="end"
-                       value="{{ end_iso }}" aria-label="End date">
-              </div>
+              {{ date_mode_control(f, s.id, s.date_mode_key, start_iso, end_iso,
+                                   s.holiday_summary) }}
             </td>
             <td>
               <label class="check">
@@ -303,8 +381,8 @@
                 <span class="sr-only">Recurring annually</span>
               </label>
             </td>
-            <td>
-              {{ day_mode_control(f, s.id, s.is_all_days, s.day_summary) }}
+            <td class="js-dayscell {{ 'is-inert' if s.is_holidays_mode else '' }}">
+              {{ day_mode_control(f, s.id, s.is_every_weekday, s.day_summary) }}
             </td>
             <td>
               <div class="stack-sm" style="gap:6px">
@@ -419,58 +497,106 @@
       <form method="post" action="{{ base_url }}/create" enctype="multipart/form-data"
             autocomplete="off" class="stack">
         {{ csrf_input(request) }}
-        {{ day_modal("", "new", "", all_days_mask, [], false) }}
+        {{ day_modal("", "new", "", all_days_mask, false) }}
 
         <fieldset class="panel">
           <legend>Name and dates</legend>
-          <div class="panel-body">
+          <div class="panel-body js-daterule">
+            <div class="field">
+              <span class="field-label">This schedule applies on</span>
+              <div class="segmented segmented--three" style="max-width:420px">
+                {% for value, label in date_modes %}
+                  <label class="seg">
+                    <input class="js-datemode" type="radio" name="date_mode" value="{{ value }}"
+                           {% if value == mode_range %}checked{% endif %}>
+                    <span class="seg-face">{{ label }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+            </div>
             <div class="row" style="gap:12px">
               <div class="field col">
                 <label for="new_name">Name</label>
                 <input id="new_name" name="name"
                        placeholder="{{ 'e.g. Parcel message' if is_auto else 'e.g. Christmas' }}" required>
               </div>
-              <div class="field col">
-                <label for="new_start">Start</label>
-                <input type="date" id="new_start" name="start" required>
-              </div>
-              <div class="field col">
-                <label for="new_end">End <span class="muted">(optional)</span></label>
-                <input type="date" id="new_end" name="end">
-              </div>
               <div class="field col-sm">
                 <label for="new_prio">Priority</label>
                 <input type="number" id="new_prio" name="priority" value="100" min="0">
               </div>
             </div>
-            <div class="inline" style="gap:28px">
-              <label class="switch">
-                <input type="checkbox" name="recurring" value="true" id="recur_new" checked>
-                <span class="track"></span>
-                <span class="switch-label">Recurring annually</span>
-                <span class="state"><span class="on">On</span><span class="off">Off</span></span>
-              </label>
-              <label class="switch">
-                <input type="checkbox" name="enabled" value="true" id="en_new" checked>
-                <span class="track"></span>
-                <span class="switch-label">Enabled</span>
-                <span class="state"><span class="on">On</span><span class="off">Off</span></span>
-              </label>
+
+            {# Only the panel for the chosen mode is shown. Without scripting
+               they all stay visible and the radio above still decides, so the
+               form remains usable rather than merely uncluttered. #}
+            <div class="js-datepanel" data-mode="{{ mode_range }}">
+              <div class="row" style="gap:12px">
+                <div class="field col">
+                  <label for="new_start">Start</label>
+                  <input type="date" id="new_start" name="start">
+                </div>
+                <div class="field col">
+                  <label for="new_end">End <span class="muted">(optional)</span></label>
+                  <input type="date" id="new_end" name="end">
+                </div>
+              </div>
+              <div class="inline" style="gap:28px; margin-top:12px">
+                <label class="switch">
+                  <input type="checkbox" name="recurring" value="true" id="recur_new" checked>
+                  <span class="track"></span>
+                  <span class="switch-label">Recurring annually</span>
+                  <span class="state"><span class="on">On</span><span class="off">Off</span></span>
+                </label>
+              </div>
+              <p class="help" style="margin-top:8px">
+                With <strong>Recurring annually</strong> the year is ignored and only the
+                month/day matters. Date ranges may wrap year-end (Dec 20 → Jan 6).
+              </p>
             </div>
-            <p class="help">
-              With <strong>Recurring annually</strong> the year is ignored and only the
-              month/day matters. Date ranges may wrap year-end (Dec 20 → Jan 6).
+
+            <p class="help js-datenote" data-mode="{{ mode_always }}">
+              No calendar restriction &mdash; this applies on every date. Narrow it
+              with <strong>Days of the week</strong> below if you need to.
             </p>
+
+            {# Shown outright rather than behind the row's modal: the add form
+               has the room, and a holiday is part of saying which dates this
+               covers, so it belongs beside the range rather than a click away. #}
+            <div class="stack-sm js-holrule js-datepanel" data-mode="{{ mode_holidays }}"
+                 style="gap:12px">
+              <div class="inline">
+                <span class="field-label">Belgian holidays</span>
+                <span class="chip chip--sm js-holtotal">0 of {{ holiday_total }} selected</span>
+                <span class="push"></span>
+                <a class="small muted" href="/holidays" target="_blank" rel="noopener">See every date &rarr;</a>
+              </div>
+              {{ holiday_boxes("", []) }}
+              <p class="help">
+                The schedule fires on these days and no others, whatever weekday
+                they land on. The <strong>Days of the week</strong> rule below does
+                not apply in this mode.
+              </p>
+            </div>
+
+            <div class="divider-soft"></div>
+
+            <label class="switch">
+              <input type="checkbox" name="enabled" value="true" id="en_new" checked>
+              <span class="track"></span>
+              <span class="switch-label">Enabled</span>
+              <span class="state"><span class="on">On</span><span class="off">Off</span></span>
+            </label>
           </div>
         </fieldset>
 
-        <fieldset class="panel">
-          <legend>Days and holidays</legend>
+        <fieldset class="panel js-dayscell">
+          <legend>Days of the week</legend>
           <div class="panel-body">
             {{ day_mode_control("", "new", true, "Every day") }}
             <p class="help">
-              <strong>All</strong> is every day of the year inside the date range above.
-              <strong>Custom</strong> opens the weekday and Belgian-holiday picker.
+              <strong>All</strong> is every day inside the date range above.
+              <strong>Custom</strong> narrows it to certain weekdays, and can skip
+              public holidays.
             </p>
           </div>
         </fieldset>
@@ -600,6 +726,11 @@
 
 {% block scripts %}
 <script>
+  // The width the server trimmed the holiday list to. Shared rather than
+  // repeated: the row is rendered by `holidays.summarise_names` and re-rendered
+  // here as you tick, and a summary that changed on save would be a bug.
+  var HOL_BUDGET = {{ holiday_name_budget }};
+
   // A row picking a collection has no use for its single-MP3 select; the
   // server ignores it either way, so this is purely to stop it looking live.
   document.querySelectorAll(".js-collection").forEach(function (sel) {
@@ -635,11 +766,44 @@
     open();
   })();
 
-  // The day rule. The row carries two radios and a summary; the weekday
-  // toggles, the nineteen holidays and the skip switch live in a modal that a
-  // checkbox opens, so all of it still works with scripting off. This only
-  // adds the conveniences: opening the modal the moment Custom is picked, and
-  // keeping the counts and the summary line honest while you edit.
+  // The date rule: three exclusive modes, one panel each. Shows the panel for
+  // the chosen mode and hides the rest, and greys the Days control out in
+  // Holidays mode -- `matches_day` ignores the weekday mask there, so leaving
+  // it looking live would promise a rule the server does not honour.
+  document.querySelectorAll(".js-daterule").forEach(function (scope) {
+    var modes = Array.prototype.slice.call(scope.querySelectorAll(".js-datemode"));
+    if (!modes.length) { return; }
+    var panels = Array.prototype.slice.call(
+      scope.querySelectorAll(".js-datepanel, .js-datenote"));
+
+    // The Days control this row owns. In a table it is a sibling cell; in the
+    // add form it is a later fieldset. Both are marked `.js-dayscell`.
+    var row = scope.closest("tr") || scope.closest("form");
+    var daysCell = row ? row.querySelector(".js-dayscell") : null;
+
+    function current() {
+      for (var i = 0; i < modes.length; i++) {
+        if (modes[i].checked) { return modes[i].value; }
+      }
+      return "range";
+    }
+
+    function sync() {
+      var mode = current();
+      panels.forEach(function (p) { p.hidden = p.dataset.mode !== mode; });
+      if (daysCell) { daysCell.classList.toggle("is-inert", mode === "holidays"); }
+    }
+
+    modes.forEach(function (radio) { radio.addEventListener("change", sync); });
+    sync();
+  });
+
+  // The weekday rule. The row carries two radios and a summary; the seven
+  // toggles and the skip switch live in a modal that a checkbox opens, so all
+  // of it still works with scripting off. This only adds the conveniences:
+  // opening the modal the moment Custom is picked, and keeping the summary
+  // honest while you edit. Holidays are a separate control now -- see
+  // `.js-holrule` below -- so nothing here reads or writes them.
   var DAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
   document.querySelectorAll(".js-dayrule").forEach(function (scope) {
@@ -651,11 +815,8 @@
     var summaryLabel = scope.querySelector(".day-summary");
 
     var days = Array.prototype.slice.call(modal.querySelectorAll('input[name="weekdays"]'));
-    var hols = Array.prototype.slice.call(modal.querySelectorAll('input[name="holiday_keys"]'));
     var presets = Array.prototype.slice.call(modal.querySelectorAll(".js-preset"));
-    var counts = Array.prototype.slice.call(modal.querySelectorAll(".js-holcount"));
     var skip = modal.querySelector(".js-skip");
-    var total = modal.querySelector(".js-holtotal");
     var longSummary = modal.querySelector(".js-daysum-long");
 
     function isCustom() {
@@ -665,13 +826,6 @@
       var m = 0;
       days.forEach(function (d) { if (d.checked) { m |= 1 << Number(d.value); } });
       return m;
-    }
-    function chosen() {
-      return hols.filter(function (h) { return h.checked; });
-    }
-    function nameOf(box) {
-      var el = box.parentNode.querySelector(".hol-name");
-      return el ? el.textContent.trim() : "";
     }
 
     function describeDays(m) {
@@ -684,10 +838,7 @@
 
     function describe() {
       if (!isCustom()) { return "Every day"; }
-      var picked = chosen();
       var parts = [describeDays(mask())];
-      if (picked.length === 1) { parts.push(nameOf(picked[0])); }
-      else if (picked.length > 1) { parts.push(picked.length + " holidays"); }
       if (skip && skip.checked && mask() !== 0) { parts.push("skipping"); }
       return parts.join(" · ");
     }
@@ -711,6 +862,114 @@
       if (wrap) { wrap.classList.toggle("is-muted", none); }
     }
 
+    function syncSummary() {
+      var text = describe();
+      if (summary) { summary.textContent = text; }
+      if (summaryLabel) { summaryLabel.classList.toggle("is-muted", !isCustom()); }
+      if (longSummary) {
+        longSummary.textContent = mask() === 0
+          ? "No weekday ticked — this fires only on the holidays picked under Dates."
+          : "Fires on " + text + ".";
+      }
+    }
+
+    // The radio has to follow what the modal now contains. You can open the
+    // editor straight from the summary label without ever touching "Custom",
+    // and the server treats anything but `custom` as "every day" -- so
+    // leaving the radio behind silently threw the whole selection away on
+    // save. Driven from the contents rather than remembered separately,
+    // because two places holding the same fact is what caused this.
+    function syncMode() {
+      var custom = mask() !== 127 || (skip && skip.checked && !skip.disabled);
+      modes.forEach(function (m) { m.checked = (m.value === "custom") === custom; });
+    }
+
+    function syncAll() { syncPresets(); syncSkip(); syncSummary(); }
+
+    // Edits inside the modal move the radio; clicking the radio itself does
+    // not, or picking "Custom" on an untouched rule would bounce back to All.
+    function syncEdit() { syncMode(); syncAll(); }
+
+    presets.forEach(function (button) {
+      button.addEventListener("click", function () {
+        var m = Number(button.dataset.mask);
+        days.forEach(function (d) { d.checked = (m >> Number(d.value) & 1) === 1; });
+        syncEdit();
+      });
+    });
+
+    days.forEach(function (d) { d.addEventListener("change", syncEdit); });
+    if (skip) { skip.addEventListener("change", syncEdit); }
+
+    // Picking Custom is the request to edit it, so open the editor there and
+    // then. Picking All just closes it again.
+    modes.forEach(function (radio) {
+      radio.addEventListener("change", function () {
+        syncSummary();
+        toggle.checked = radio.value === "custom";
+      });
+    });
+
+    // Escape closes, which a checkbox cannot do on its own.
+    modal.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") { toggle.checked = false; }
+    });
+
+    syncAll();
+  });
+
+  // The holidays, which sit in the Dates column. Two shapes to cover: a table
+  // row, where the boxes are behind a modal and a summary reports them, and
+  // the add form, where they are laid out in the open with no modal and no
+  // summary. Everything below tolerates either being absent.
+  document.querySelectorAll(".js-holrule").forEach(function (scope) {
+    var toggle = scope.dataset.modal
+      ? document.getElementById(scope.dataset.modal) : null;
+    var modal = toggle ? toggle.nextElementSibling : null;
+    // Behind a modal the boxes live in it; inline, they are inside the scope.
+    var root = modal || scope;
+
+    var hols = Array.prototype.slice.call(root.querySelectorAll('input[name="holiday_keys"]'));
+    if (!hols.length) { return; }
+    var counts = Array.prototype.slice.call(root.querySelectorAll(".js-holcount"));
+    var total = root.querySelector(".js-holtotal");
+    var summary = scope.querySelector(".js-holsum");
+    var summaryLabel = scope.querySelector(".day-summary");
+    var longSummary = root.querySelector(".js-holsum-long");
+
+    function chosen() {
+      return hols.filter(function (h) { return h.checked; });
+    }
+    function nameOf(box) {
+      var el = box.parentNode.querySelector(".hol-name");
+      return el ? el.textContent.trim() : "";
+    }
+
+    // The mirror of `holidays.summarise_names`. Names beat counts -- "2
+    // holidays" tells you nothing you could act on -- so the whole list shows
+    // whenever it fits, and only the overflow is folded away.
+    function andOthers(n) {
+      return " and " + n + " other" + (n !== 1 ? "s" : "");
+    }
+
+    function describe() {
+      var names = chosen().map(nameOf);
+      if (!names.length) { return "No holidays"; }
+      var joined = names.join(", ");
+      if (joined.length <= HOL_BUDGET) { return joined; }
+
+      var shown = [];
+      for (var i = 0; i < names.length; i++) {
+        var remaining = names.length - shown.length - 1;
+        var candidate = shown.concat([names[i]]).join(", ");
+        if (remaining) { candidate += andOthers(remaining); }
+        if (shown.length && candidate.length > HOL_BUDGET) { break; }
+        shown.push(names[i]);
+      }
+      var left = names.length - shown.length;
+      return shown.join(", ") + (left ? andOthers(left) : "");
+    }
+
     function syncCounts() {
       counts.forEach(function (chip) {
         var group = chip.dataset.group;
@@ -727,56 +986,38 @@
     }
 
     function syncSummary() {
-      var text = describe();
-      if (summary) { summary.textContent = text; }
-      if (summaryLabel) { summaryLabel.classList.toggle("is-muted", !isCustom()); }
+      var picked = chosen();
+      if (summary) { summary.textContent = describe(); }
+      if (summaryLabel) { summaryLabel.classList.toggle("is-muted", !picked.length); }
       if (longSummary) {
-        longSummary.textContent = mask() === 0 && chosen().length === 0
-          ? "Nothing ticked — pick at least one day or one holiday."
-          : "Fires on " + text + ".";
+        // The modal footer has the whole width, so it never trims: the one
+        // place you are actually choosing them should name all of them.
+        longSummary.textContent = picked.length
+          ? "Fires on " + picked.map(nameOf).join(", ") + "."
+          : "Nothing ticked — pick at least one holiday.";
       }
     }
 
-    function syncAll() { syncPresets(); syncSkip(); syncCounts(); syncSummary(); }
+    function syncAll() { syncCounts(); syncSummary(); }
 
-    presets.forEach(function (button) {
-      button.addEventListener("click", function () {
-        var m = Number(button.dataset.mask);
-        days.forEach(function (d) { d.checked = (m >> Number(d.value) & 1) === 1; });
-        syncAll();
-      });
-    });
-
-    modal.querySelectorAll(".js-holbulk").forEach(function (button) {
+    root.querySelectorAll(".js-holbulk").forEach(function (button) {
       button.addEventListener("click", function () {
         var on = button.dataset.on === "1";
         hols.forEach(function (h) {
           if (h.dataset.group === button.dataset.group) { h.checked = on; }
         });
-        syncCounts();
-        syncSummary();
+        syncAll();
       });
     });
 
-    days.forEach(function (d) { d.addEventListener("change", syncAll); });
-    hols.forEach(function (h) { h.addEventListener("change", function () {
-      syncCounts(); syncSummary();
-    }); });
-    if (skip) { skip.addEventListener("change", syncSummary); }
+    hols.forEach(function (h) { h.addEventListener("change", syncAll); });
 
-    // Picking Custom is the request to edit it, so open the editor there and
-    // then. Picking All just closes it again.
-    modes.forEach(function (radio) {
-      radio.addEventListener("change", function () {
-        syncSummary();
-        toggle.checked = radio.value === "custom";
+    if (modal) {
+      // Escape closes, which a checkbox cannot do on its own.
+      modal.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") { toggle.checked = false; }
       });
-    });
-
-    // Escape closes, which a checkbox cannot do on its own.
-    modal.addEventListener("keydown", function (event) {
-      if (event.key === "Escape") { toggle.checked = false; }
-    });
+    }
 
     syncAll();
   });

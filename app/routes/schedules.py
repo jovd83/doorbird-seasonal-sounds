@@ -27,12 +27,14 @@ from app.schedule_form import (
     MAX_DELAY_SECONDS,
     MODE_ALL,
     MODE_CUSTOM,
+    DayRule,
     FormError,
     build_date_fields,
     build_day_rule,
     build_time_window,
     clean_delay,
     optional_int,
+    parse_holiday_keys,
 )
 from app.scheduler import trigger_on_change
 from app.security import require_auth, require_csrf
@@ -180,12 +182,20 @@ def _make_router(*, kind: str, prefix: str, page: dict) -> APIRouter:
                 "today": date.today(),
                 "holiday_groups": holidays.grouped(),
                 "holiday_total": len(holidays.HOLIDAYS),
+                "holiday_name_budget": holidays.NAME_LIST_BUDGET,
                 "day_presets": holidays.DAY_PRESETS,
                 "weekday_labels": holidays.WEEKDAY_LABELS,
                 "weekday_names": holidays.WEEKDAY_NAMES,
                 "all_days_mask": holidays.ALL_DAYS,
                 "mode_all": MODE_ALL,
                 "mode_custom": MODE_CUSTOM,
+                # The three exclusive date rules, in the order the segmented
+                # control shows them.
+                "date_modes": [(m, holidays.DATE_MODE_LABELS[m])
+                               for m in holidays.DATE_MODES],
+                "mode_always": holidays.DATE_ALWAYS,
+                "mode_range": holidays.DATE_RANGE,
+                "mode_holidays": holidays.DATE_HOLIDAYS,
                 "kind": kind,
                 "base_url": prefix,
                 "max_delay": MAX_DELAY_SECONDS,
@@ -196,7 +206,9 @@ def _make_router(*, kind: str, prefix: str, page: dict) -> APIRouter:
     @router.post("/create")
     async def create_schedule(
         name: str = Form(...),
-        start: str = Form(...),
+        # Optional: only `range` mode reads it, and the parser says so
+        # plainly if it is missing there.
+        start: str = Form(""),
         end: str = Form(""),
         recurring: bool = Form(False),
         mp3_id: str = Form(""),
@@ -216,15 +228,27 @@ def _make_router(*, kind: str, prefix: str, page: dict) -> APIRouter:
         holiday_keys: list[str] = Form(default=[]),
         skip_public_holidays: bool = Form(False),
         day_mode: str = Form(""),
+        date_mode: str = Form(""),
     ):
-        fields = _validated(build_date_fields, start=start, end=end, recurring=recurring)
+        # Parsed once and handed to the date rule, which is what decides
+        # whether they are stored at all: only `holidays` mode keeps them.
+        keys = _validated(parse_holiday_keys, holiday_keys)
+        fields = _validated(
+            build_date_fields, start=start, end=end, recurring=recurring,
+            mode=date_mode, holiday_keys=keys)
         fields |= _validated(
             build_time_window, all_day=all_day,
             start_time=start_time, end_time=end_time).as_fields()
-        days = _validated(
-            build_day_rule, mode=day_mode, weekdays=weekdays,
-            holiday_keys=holiday_keys, skip_public_holidays=skip_public_holidays)
+        # The Days control is greyed out in `holidays` mode and `matches_day`
+        # ignores it there, so store the rule that says exactly that.
+        days = (
+            DayRule.unrestricted()
+            if fields["date_mode"] == holidays.DATE_HOLIDAYS
+            else _validated(build_day_rule, mode=day_mode, weekdays=weekdays,
+                            skip_public_holidays=skip_public_holidays)
+        )
         fields |= days.as_fields()
+        stored_holidays = keys if fields["date_mode"] == holidays.DATE_HOLIDAYS else ()
         with session_scope() as db:
             if db.query(Schedule).filter(Schedule.name == name).first():
                 raise HTTPException(400, f"Schedule {name!r} already exists")
@@ -246,7 +270,7 @@ def _make_router(*, kind: str, prefix: str, page: dict) -> APIRouter:
                 **fields,
             )
             schedule.devices = _resolve_devices(db, device_ids)
-            schedule.set_holiday_keys(days.holiday_keys)
+            schedule.set_holiday_keys(stored_holidays)
             db.add(schedule)
         trigger_on_change()
         return RedirectResponse(prefix, status_code=303)
@@ -257,7 +281,9 @@ def _make_router(*, kind: str, prefix: str, page: dict) -> APIRouter:
         name: str = Form(...),
         mp3_id: str = Form(""),
         collection_id: str = Form(""),
-        start: str = Form(...),
+        # Optional: only `range` mode reads it, and the parser says so
+        # plainly if it is missing there.
+        start: str = Form(""),
         end: str = Form(""),
         recurring: bool = Form(False),
         priority: int = Form(100),
@@ -273,15 +299,27 @@ def _make_router(*, kind: str, prefix: str, page: dict) -> APIRouter:
         holiday_keys: list[str] = Form(default=[]),
         skip_public_holidays: bool = Form(False),
         day_mode: str = Form(""),
+        date_mode: str = Form(""),
     ):
-        fields = _validated(build_date_fields, start=start, end=end, recurring=recurring)
+        # Parsed once and handed to the date rule, which is what decides
+        # whether they are stored at all: only `holidays` mode keeps them.
+        keys = _validated(parse_holiday_keys, holiday_keys)
+        fields = _validated(
+            build_date_fields, start=start, end=end, recurring=recurring,
+            mode=date_mode, holiday_keys=keys)
         fields |= _validated(
             build_time_window, all_day=all_day,
             start_time=start_time, end_time=end_time).as_fields()
-        days = _validated(
-            build_day_rule, mode=day_mode, weekdays=weekdays,
-            holiday_keys=holiday_keys, skip_public_holidays=skip_public_holidays)
+        # The Days control is greyed out in `holidays` mode and `matches_day`
+        # ignores it there, so store the rule that says exactly that.
+        days = (
+            DayRule.unrestricted()
+            if fields["date_mode"] == holidays.DATE_HOLIDAYS
+            else _validated(build_day_rule, mode=day_mode, weekdays=weekdays,
+                            skip_public_holidays=skip_public_holidays)
+        )
         fields |= days.as_fields()
+        stored_holidays = keys if fields["date_mode"] == holidays.DATE_HOLIDAYS else ()
         with session_scope() as db:
             s = db.get(Schedule, schedule_id)
             if not s or s.kind != kind:
@@ -300,7 +338,7 @@ def _make_router(*, kind: str, prefix: str, page: dict) -> APIRouter:
             s.delay_seconds = _validated(clean_delay, kind, delay_seconds,
                                          auto_response_kind=KIND_AUTO_RESPONSE)
             s.devices = _resolve_devices(db, device_ids)
-            s.set_holiday_keys(days.holiday_keys)
+            s.set_holiday_keys(stored_holidays)
             for k, v in fields.items():
                 setattr(s, k, v)
         trigger_on_change()

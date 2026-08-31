@@ -884,3 +884,20 @@ audio {
   .sidebar, .mobile-bar, .mobile-head, .topbar-actions, .more-sheet { display: none !important; }
   body { background: #fff; color: #000; }
 }
+
+/* Three-way segmented control, for the Dates column's Always / Date interval /
+   Holidays choice. The two-way `.segmented` sizes its halves at 50%, which
+   leaves the third label overflowing its track. */
+.segmented--three .seg { flex: 1 1 0; min-width: 0; }
+.segmented--three .seg-face {
+  padding-left: 6px; padding-right: 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* The Days control while the date rule is Holidays: the weekday mask is not
+   consulted in that mode, so the cell says so rather than looking editable.
+   Left readable, not hidden -- the rule is still stored and comes back the
+   moment the mode changes. */
+.js-dayscell.is-inert { opacity: .38; }
+.js-dayscell.is-inert .segmented,
+.js-dayscell.is-inert .day-summary { pointer-events: none; }

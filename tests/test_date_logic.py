@@ -25,6 +25,9 @@ class _Stub:
         self.weekday_mask = kw.get("weekday_mask", 0b1111111)
         self.skip_public_holidays = kw.get("skip_public_holidays", False)
         self.holiday_keys = frozenset(kw.get("holiday_keys", ()))
+        # A stored calendar window is exactly what `range` means, so that is
+        # what every pre-existing schedule reads as.
+        self.date_mode = kw.get("date_mode", "range")
 
     @property
     def all_day(self) -> bool:
